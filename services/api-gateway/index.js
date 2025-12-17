@@ -1,19 +1,117 @@
-const http = require('http');
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
 
+const app = express();
 const PORT = process.env.PORT || 8000;
 
-const server = http.createServer((req, res) => {
-  if (req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'healthy', service: 'api-gateway' }));
-  } else {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ message: 'API Gateway', version: '0.1.0' }));
+// Service URLs (Internal Docker Network Names)
+const SERVICES = {
+  fhir: process.env.FHIR_SERVICE || 'http://fhir-server:8080/fhir',
+  ml: process.env.ML_SERVICE || 'http://ml-service:5000',
+  cdss: process.env.CDSS_SERVICE || 'http://cdss-engine:8083',
+  security: process.env.SECURITY_SERVICE || 'http://security-service:8081',
+  device: process.env.DEVICE_SERVICE || 'http://device-gateway:8082'
+};
+
+app.use(cors()); // Allow React frontend to connect
+app.use(express.json());
+
+// 1. SYSTEM HEALTH CHECK (The "Connect" Button Logic)
+app.get('/health/system', async (req, res) => {
+  console.log('Performing kernel system check...');
+  
+  const status = {
+    services: {
+      fhir: false,
+      ml: false,
+      security: false,
+      cdss: false,
+      device: false
+    },
+    endpoints: {
+      fhir: SERVICES.fhir
+    },
+    timestamp: new Date().toISOString()
+  };
+
+  // Check all services in parallel
+  try {
+    const checks = [
+      // Check FHIR Server (HAPI FHIR metadata endpoint)
+      axios.get(`${SERVICES.fhir}/metadata`, { timeout: 2000 })
+        .then(() => { status.services.fhir = true; })
+        .catch(err => console.error('FHIR Health Fail:', err.message)),
+
+      // Check ML Service
+      axios.get(`${SERVICES.ml}/health`, { timeout: 2000 })
+        .then(() => { status.services.ml = true; })
+        .catch(err => console.error('ML Health Fail:', err.message)),
+
+      // Check Security Service
+      axios.get(`${SERVICES.security}/health`, { timeout: 2000 })
+        .then(() => { status.services.security = true; })
+        .catch(err => console.error('Security Health Fail:', err.message)),
+        
+       // Check CDSS Service
+      axios.get(`${SERVICES.cdss}/health`, { timeout: 2000 })
+        .then(() => { status.services.cdss = true; })
+        .catch(err => console.error('CDSS Health Fail:', err.message))
+    ];
+
+    await Promise.all(checks);
+    
+    // Calculate global system health (True if critical services are up)
+    const isHealthy = status.services.fhir && status.services.ml;
+    
+    res.status(200).json(status);
+
+  } catch (error) {
+    res.status(503).json({ error: 'Kernel panic: Health check failed', details: error.message });
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`API gateway running on port ${PORT}`);
+// 2. PATIENT API (Forwarding to FHIR Server)
+app.post('/api/v1/patients', async (req, res) => {
+  try {
+    console.log('Forwarding new patient to FHIR server...');
+    // In a real app, we would transform the simple JSON to FHIR here.
+    // For now, we assume the frontend sends valid FHIR or we wrap it.
+    
+    const fhirPatient = {
+      resourceType: "Patient",
+      name: req.body.name, // Expecting array from frontend
+      gender: req.body.gender,
+      birthDate: req.body.birthDate
+    };
+
+    // Forward to HAPI FHIR
+    const response = await axios.post(`${SERVICES.fhir}/Patient`, fhirPatient, {
+      headers: { 'Content-Type': 'application/fhir+json' }
+    });
+
+    res.status(201).json(response.data);
+  } catch (error) {
+    console.error('Error creating patient:', error.message);
+    res.status(500).json({ error: 'Failed to write to Clinical Data Repository' });
+  }
 });
 
-module.exports = server;
+// 3. ML TRAINING API (Forwarding to Python Service)
+app.post('/api/v1/ml/train', async (req, res) => {
+  try {
+    console.log('Triggering ML training job...');
+    const response = await axios.post(`${SERVICES.ml}/train`, req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error('ML Service Error:', error.message);
+    res.status(500).json({ error: 'ML Training failed to start' });
+  }
+});
+
+// Basic Gateway Health
+app.get('/health', (req, res) => res.json({ status: 'Gateway Online', version: '1.0.0' }));
+
+app.listen(PORT, () => {
+  console.log(`API Gateway acting as HOS Kernel on port ${PORT}`);
+});
