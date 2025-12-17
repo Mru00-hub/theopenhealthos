@@ -1,19 +1,20 @@
-const http = require('http');
-
+const express = require('express');
+const app = express();
 const PORT = process.env.PORT || 8082;
 
-const server = http.createServer((req, res) => {
-  if (req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'healthy', service: 'device-gateway' }));
-  } else {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ message: 'Device Gateway', version: '0.1.0' }));
-  }
+app.use(express.json());
+
+// Health Check (Critical for the Simulator to see it as "Online")
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy', service: 'device-gateway', protocol: 'HL7/DICOM' });
 });
 
-server.listen(PORT, () => {
-  console.log(`Device gateway running on port ${PORT}`);
+// Mock Data Stream Endpoint
+app.post('/stream/data', (req, res) => {
+  console.log('Received IoMT device data packet');
+  res.json({ status: 'accepted', latency_ms: 12 });
 });
 
-module.exports = server;
+app.listen(PORT, () => {
+  console.log(`Device Gateway listening on port ${PORT}`);
+});
