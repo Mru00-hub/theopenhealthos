@@ -1,1 +1,226 @@
+version: '3.8'
 
+services:
+  # FHIR Server - Healthcare data storage and API
+  fhir-server:
+    image: hapiproject/hapi:latest
+    container_name: hos-fhir-server
+    ports:
+      - "8080:8080"
+    environment:
+      - HAPI_FHIR_VERSION=R4
+      - HAPI_FHIR_VALIDATION_REQUESTS_ENABLED=true
+      - HAPI_FHIR_CORS_ENABLED=true
+      - HAPI_FHIR_CORS_ALLOWED_ORIGIN=*
+    volumes:
+      - fhir-data:/data/hapi
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/fhir/metadata"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Security & Auth Service
+  security-service:
+    build: ./services/security-service
+    container_name: hos-security
+    ports:
+      - "8081:8081"
+    environment:
+      - NODE_ENV=development
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-prod}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=hos_security
+      - HIPAA_AUDIT_ENABLED=true
+    depends_on:
+      - postgres
+    networks:
+      - hos-network
+
+  # ML/AI Service - Predictions and analytics
+  ml-service:
+    build: ./services/ml-service
+    container_name: hos-ml-service
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+      - MODEL_PATH=/models
+      - FHIR_SERVER_URL=http://fhir-server:8080/fhir
+    volumes:
+      - ml-models:/models
+      - ./services/ml-service:/app
+    networks:
+      - hos-network
+    depends_on:
+      - fhir-server
+
+  # Device Gateway - HL7, DICOM, IoMT integration
+  device-gateway:
+    build: ./services/device-gateway
+    container_name: hos-device-gateway
+    ports:
+      - "2575:2575"  # HL7 MLLP
+      - "11112:11112"  # DICOM
+      - "8082:8082"  # REST API
+    environment:
+      - HL7_PORT=2575
+      - DICOM_PORT=11112
+      - FHIR_SERVER_URL=http://fhir-server:8080/fhir
+    networks:
+      - hos-network
+    depends_on:
+      - fhir-server
+
+  # CDSS Engine - Clinical Decision Support
+  cdss-engine:
+    build: ./services/cdss-engine
+    container_name: hos-cdss
+    ports:
+      - "8083:8083"
+    environment:
+      - FHIR_SERVER_URL=http://fhir-server:8080/fhir
+      - ML_SERVICE_URL=http://ml-service:5000
+      - RULES_PATH=/rules
+    volumes:
+      - ./services/cdss-engine/rules:/rules
+    networks:
+      - hos-network
+    depends_on:
+      - fhir-server
+      - ml-service
+
+  # API Gateway - Central entry point
+  api-gateway:
+    build: ./services/api-gateway
+    container_name: hos-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - FHIR_SERVICE=http://fhir-server:8080
+      - SECURITY_SERVICE=http://security-service:8081
+      - ML_SERVICE=http://ml-service:5000
+      - DEVICE_SERVICE=http://device-gateway:8082
+      - CDSS_SERVICE=http://cdss-engine:8083
+    networks:
+      - hos-network
+    depends_on:
+      - fhir-server
+      - security-service
+      - ml-service
+      - device-gateway
+      - cdss-engine
+
+  # PostgreSQL - Relational data storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: hos-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=hos_admin
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dev_password}
+      - POSTGRES_DB=hos_main
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    networks:
+      - hos-network
+
+  # Redis - Caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: hos-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - hos-network
+
+  # MongoDB - Document storage for audit logs
+  mongodb:
+    image: mongo:7
+    container_name: hos-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=hos_admin
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-dev_password}
+      - MONGO_INITDB_DATABASE=hos_audit
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - hos-network
+
+  # RabbitMQ - Message queue for async processing
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: hos-rabbitmq
+    ports:
+      - "5672:5672"  # AMQP
+      - "15672:15672"  # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=hos_admin
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-dev_password}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - hos-network
+
+  # Simulator UI - Layer 2 Microservices Simulator
+  simulator-ui:
+    build: ./simulators/layer2-microservices
+    container_name: hos-simulator-ui
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_GATEWAY=http://localhost:8000
+      - REACT_APP_FHIR_SERVER=http://localhost:8080/fhir
+    volumes:
+      - ./simulators/layer2-microservices:/app
+      - /app/node_modules
+    networks:
+      - hos-network
+    depends_on:
+      - api-gateway
+
+  # Architecture Explorer - Layer 1
+  architecture-explorer:
+    build: ./simulators/layer1-architecture-explorer
+    container_name: hos-arch-explorer
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./simulators/layer1-architecture-explorer:/app
+      - /app/node_modules
+    networks:
+      - hos-network
+
+  # Patient Journey - Layer 3
+  patient-journey:
+    build: ./simulators/layer3-patient-journey
+    container_name: hos-patient-journey
+    ports:
+      - "3002:3000"
+    volumes:
+      - ./simulators/layer3-patient-journey:/app
+      - /app/node_modules
+    networks:
+      - hos-network
+
+volumes:
+  fhir-data:
+  postgres-data:
+  mongo-data:
+  redis-data:
+  rabbitmq-data:
+  ml-models:
+
+networks:
+  hos-network:
+    driver: bridge
