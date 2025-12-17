@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Activity, Database, Shield, Cpu, Wifi, HardDrive, AlertCircle, CheckCircle } from 'lucide-react';
 
 // Configuration for API endpoints (assumes API Gateway is on port 8000)
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'https://didactic-broccoli-wrx56qq7467jc579j-8000.app.github.dev';
 
 const MicroservicesSimulator = () => {
   const [activeServices, setActiveServices] = useState({
