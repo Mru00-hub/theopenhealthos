@@ -1,0 +1,9 @@
+{
+  "name": "@theopenhealthos/api-gateway",
+  "version": "0.1.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo 'No tests yet' && exit 0"
+  }
+}
