@@ -25,10 +25,11 @@
     "@types/jest": "^29.5.5",
     "license-checker": "^25.0.1"
   },
-  "workspaces": [
-    "simulators/layer1-architecture-explorer",
-    "simulators/layer2-microservices",
-    "simulators/layer3-patient-journey",
-    "services/*"
-  ]
+    "workspaces": [
+      "services/api-gateway",
+      "services/cdss-engine",
+      "services/device-gateway",
+      "services/ml-service",
+      "services/security-service"
+    ]
 }
