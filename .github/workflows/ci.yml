@@ -106,22 +106,22 @@ jobs:
           format: 'table'
           exit-code: '0'
 
-    hipaa-compliance:
-      name: HIPAA Compliance Audit
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
+  hipaa-compliance:
+    name: HIPAA Compliance Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       
-        - name: Check for PHI in code
-          run: |
-            echo "Scanning for potential PHI..."
-            # Added --exclude-dir=simulators below
-            if grep -r -i "ssn.*=\|social.security.*=\|patient.*name.*=" --include="*.js" --include="*.py" --exclude-dir=node_modules --exclude-dir=docs --exclude-dir=simulators .;
-            then
-              echo "⚠️ Warning: Potential PHI pattern found"
-              exit 1
-            fi
-            echo "✓ No PHI patterns detected"
+      - name: Check for PHI in code
+        run: |
+          echo "Scanning for potential PHI..."
+          # Added --exclude-dir=simulators below
+          if grep -r -i "ssn.*=\|social.security.*=\|patient.*name.*=" --include="*.js" --include="*.py" --exclude-dir=node_modules --exclude-dir=docs --exclude-dir=simulators .;
+          then
+            echo "⚠️ Warning: Potential PHI pattern found"
+            exit 1
+          fi
+          echo "✓ No PHI patterns detected"
 
   integration-test:
     name: Integration Tests
