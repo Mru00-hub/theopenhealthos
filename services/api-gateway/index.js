@@ -39,24 +39,29 @@ app.get('/health/system', async (req, res) => {
   try {
     const checks = [
       // Check FHIR Server (HAPI FHIR metadata endpoint)
-      axios.get(`${SERVICES.fhir}/metadata`, { timeout: 2000 })
+      axios.get(`${SERVICES.fhir}/metadata`, { timeout: 5000 })
         .then(() => { status.services.fhir = true; })
         .catch(err => console.error('FHIR Health Fail:', err.message)),
 
       // Check ML Service
-      axios.get(`${SERVICES.ml}/health`, { timeout: 2000 })
+      axios.get(`${SERVICES.ml}/health`, { timeout: 5000 })
         .then(() => { status.services.ml = true; })
         .catch(err => console.error('ML Health Fail:', err.message)),
 
       // Check Security Service
-      axios.get(`${SERVICES.security}/health`, { timeout: 2000 })
+      axios.get(`${SERVICES.security}/health`, { timeout: 5000 })
         .then(() => { status.services.security = true; })
         .catch(err => console.error('Security Health Fail:', err.message)),
         
        // Check CDSS Service
-      axios.get(`${SERVICES.cdss}/health`, { timeout: 2000 })
+      axios.get(`${SERVICES.cdss}/health`, { timeout: 5000 })
         .then(() => { status.services.cdss = true; })
-        .catch(err => console.error('CDSS Health Fail:', err.message))
+        .catch(err => console.error('CDSS Health Fail:', err.message)),
+
+      // ADDED Device Gateway Check
+      axios.get(`${SERVICES.device}/health`, { timeout: 5000 })
+        .then(() => { status.services.device = true; })
+        .catch(err => console.error('Device Health Fail:', err.message))
     ];
 
     await Promise.all(checks);
