@@ -215,7 +215,7 @@ Built on the shoulders of giants:
 
 ## 📧 Contact
 
-- **Project Lead:** Dr. Mrudula Bhalke (mailto:mrudulabhalke75917@gmail.com)
+- **Project Lead:** Dr. Mrudula Bhalke (mailto: mrudulabhalke75917@gmail.com)
 ---
 
 **⭐ If you find OpenHealthOS useful, please star this repository!**
