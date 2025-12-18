@@ -100,7 +100,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - FHIR_SERVICE=http://fhir-server:8080
+      - FHIR_SERVICE=http://fhir-server:8080/fhir
       - SECURITY_SERVICE=http://security-service:8081
       - ML_SERVICE=http://ml-service:5000
       - DEVICE_SERVICE=http://device-gateway:8082
