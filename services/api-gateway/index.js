@@ -114,6 +114,18 @@ app.post('/api/v1/ml/train', async (req, res) => {
   }
 });
 
+// 4. CDSS EVALUATION API (Forwarding to CDSS Engine)
+app.post('/api/v1/cdss/evaluate', async (req, res) => {
+  try {
+    console.log('Requesting clinical decision support...');
+    const response = await axios.post(`${SERVICES.cdss}/evaluate`, req.body);
+    res.json(response.data);
+  } catch (error) {
+    console.error('CDSS Service Error:', error.message);
+    res.status(500).json({ error: 'Clinical Decision Support unavailable' });
+  }
+});
+
 // Basic Gateway Health
 app.get('/health', (req, res) => res.json({ status: 'Gateway Online', version: '1.0.0' }));
 
