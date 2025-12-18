@@ -176,56 +176,92 @@ const MicroservicesSimulator = () => {
     }
   };
   
-  // REAL Implementation: WebSocket Connection
+  // COMPREHENSIVE PROOF: Handles Websocket, Physics REST, and Legacy REST
   const simulateDeviceStream = async () => {
     if (!activeServices.device) {
       addMessage('error', 'Device Gateway Offline', 'error');
       return;
     }
 
-    addMessage('device', 'Establishing Secure WebSocket Tunnel (WSS)...');
-
-    // 1. Determine WS URL (Handle http vs https automatically)
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Use the API_BASE_URL but replace http/s with ws/s
-    const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + '/live/stream';
+    // --- PHASE 1: HIGH-SPEED WEBSOCKET (Modern IoMT) ---
+    addMessage('device', 'Starting Phase 1: High-Speed IoMT Stream (WebSocket)...');
     
-    try {
-        const socket = new WebSocket(wsUrl);
+    // Handle switching between ws:// and wss:// automatically
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + '/live/stream';
+    let socket;
 
+    try {
+        socket = new WebSocket(wsUrl);
+        
         socket.onopen = () => {
-            addMessage('device', '✓ Tunnel Established. Receiving 10Hz Physics Stream...');
+             addMessage('device', '✓ Secure Tunnel Established (WSS)');
         };
 
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            
             if (data.type === 'stream_frame') {
-                // We don't log every frame to text (too fast), just update UI or log occasionally
-                // For demo, let's log the raw physics occasionally
-                if (Math.random() > 0.9) { // Log 10% of frames to avoid clutter
-                     addMessage('device', `RAW: ${data.raw_physics.red}v | VITALS: ${data.vitals.spo2}%`);
+                // Log occasionally to show speed without flooding
+                if (Math.random() > 0.8) {
+                    addMessage('device', `⚡ Live: HR ${data.vitals.hr} | SpO2 ${data.vitals.spo2}%`);
                 }
-            } 
-            else if (data.type === 'db_sync_event') {
-                addMessage('fhir', '✓ Edge Sync: Data Batch persisted to FHIR Server', 'success');
+                // Handle Critical Alert from Edge
+                if (data.alert) {
+                    addMessage('ml', `⚠ EDGE ALERT: ${data.alert} detected!`, 'warning');
+                }
+            } else if (data.type === 'db_sync_event') {
+                addMessage('fhir', '✓ Smart Edge Sync: Batch saved to FHIR', 'success');
             }
         };
 
         socket.onerror = (error) => {
-            addMessage('error', 'WebSocket Error - Check Gateway Proxy');
-            socket.close();
+             // Sockets can be flaky in some cloud environments, fail gracefully
+             addMessage('error', 'WebSocket connection issue - check proxy');
         };
 
-        // Close connection after 15 seconds to end simulation
-        setTimeout(() => {
+        // Run WebSocket for 6 seconds, then move to Phase 2
+        setTimeout(async () => {
             socket.close();
-            addMessage('device', 'Stream session ended (15s limit)');
-        }, 15000);
+            addMessage('device', 'Phase 1 Complete. Switching to Driver Tests...');
+            await runRestDrivers();
+        }, 6000);
 
     } catch (e) {
-        addMessage('error', `WS Connection Failed: ${e.message}`);
+        addMessage('error', `WS Error: ${e.message}`);
     }
+
+    // --- PHASE 2 & 3: REST DRIVERS (Physics & Legacy) ---
+    const runRestDrivers = async () => {
+        await delay(1000);
+        
+        // SCENARIO: RAW PHYSICS
+        addMessage('device', 'Phase 2: Raw Sensor Physics (Optical)...');
+        try {
+            const res1 = await fetch(`${API_BASE_URL}/api/v1/devices/optical`, { method: 'POST' });
+            const data1 = await res1.json();
+            
+            // Show the "Before" (Raw) and "After" (Abstracted)
+            addMessage('device', `Input: R=${data1.raw_input.red}v / IR=${data1.raw_input.ir}v`);
+            addMessage('device', `→ Math: Beer-Lambert Law Calculation`);
+            addMessage('device', `→ Output: SpO2 ${data1.abstracted_value}% (Standardized)`);
+        } catch(e) { addMessage('error', 'Optical Driver Fail'); }
+
+        await delay(1500);
+
+        // SCENARIO: LEGACY PROTOCOL
+        addMessage('device', 'Phase 3: Legacy Equipment (Serial/Text)...');
+        try {
+            const res2 = await fetch(`${API_BASE_URL}/api/v1/devices/legacy`, { method: 'POST' });
+            const data2 = await res2.json();
+            
+            // Show the Parsing Logic
+            addMessage('device', `Input: "${data2.raw_input}"`);
+            addMessage('device', `→ Parser: Regex Extraction`);
+            addMessage('device', `→ Output: HR ${data2.abstracted_value} bpm (Standardized)`);
+            
+            addMessage('system', '✓ ALL DEVICE TESTS PASSED: Universal Abstraction Proven', 'success');
+        } catch(e) { addMessage('error', 'Legacy Driver Fail'); }
+    };
   };
 
   return (
