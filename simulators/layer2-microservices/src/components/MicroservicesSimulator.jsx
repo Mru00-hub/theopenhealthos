@@ -233,18 +233,24 @@ const MicroservicesSimulator = () => {
     // --- PHASE 2 & 3: REST DRIVERS (Physics & Legacy) ---
     const runRestDrivers = async () => {
         await delay(1000);
+        let opticalSuccess = false;
+        let legacySuccess = false;
         
         // SCENARIO: RAW PHYSICS
         addMessage('device', 'Phase 2: Raw Sensor Physics (Optical)...');
         try {
             const res1 = await fetch(`${API_BASE_URL}/api/v1/devices/optical`, { method: 'POST' });
+            if (!res1.ok) throw new Error(res1.statusText);
+            
             const data1 = await res1.json();
             
-            // Show the "Before" (Raw) and "After" (Abstracted)
-            addMessage('device', `Input: R=${data1.raw_input.red}v / IR=${data1.raw_input.ir}v`);
+            addMessage('device', `Input: R=${data1.raw_input.red.toFixed(2)}v / IR=${data1.raw_input.ir.toFixed(2)}v`);
             addMessage('device', `→ Math: Beer-Lambert Law Calculation`);
             addMessage('device', `→ Output: SpO2 ${data1.abstracted_value}% (Standardized)`);
-        } catch(e) { addMessage('error', 'Optical Driver Fail'); }
+            opticalSuccess = true;
+        } catch(e) { 
+            addMessage('error', `Optical Driver Fail: ${e.message}`); 
+        }
 
         await delay(1500);
 
@@ -252,15 +258,24 @@ const MicroservicesSimulator = () => {
         addMessage('device', 'Phase 3: Legacy Equipment (Serial/Text)...');
         try {
             const res2 = await fetch(`${API_BASE_URL}/api/v1/devices/legacy`, { method: 'POST' });
+            if (!res2.ok) throw new Error(res2.statusText);
+            
             const data2 = await res2.json();
             
-            // Show the Parsing Logic
             addMessage('device', `Input: "${data2.raw_input}"`);
             addMessage('device', `→ Parser: Regex Extraction`);
             addMessage('device', `→ Output: HR ${data2.abstracted_value} bpm (Standardized)`);
-            
+            legacySuccess = true;
+        } catch(e) { 
+            addMessage('error', `Legacy Driver Fail: ${e.message}`); 
+        }
+
+        // Only show success if BOTH passed
+        if (opticalSuccess && legacySuccess) {
             addMessage('system', '✓ ALL DEVICE TESTS PASSED: Universal Abstraction Proven', 'success');
-        } catch(e) { addMessage('error', 'Legacy Driver Fail'); }
+        } else {
+            addMessage('error', '⚠ DEVICE TESTS INCOMPLETE: Check Driver Logs', 'error');
+        }
     };
   };
 
