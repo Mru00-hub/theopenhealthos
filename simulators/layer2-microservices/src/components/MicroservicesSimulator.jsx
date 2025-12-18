@@ -20,6 +20,7 @@ const MicroservicesSimulator = () => {
   const [isSystemHealthy, setIsSystemHealthy] = useState(false);
   const [halStatus, setHalStatus] = useState({ online: true, buffer: 0 });
   const [modelRegistry, setModelRegistry] = useState([]);
+  const [selectedModel, setSelectedModel] = useState('sepsis-detector');
 
   // Helper for delays
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -208,19 +209,25 @@ const MicroservicesSimulator = () => {
 
   // --- 5. MLOps LIFECYCLE ---
   const simulateMLTraining = async () => {
-    addMessage('ml', 'Initiating Distributed Pipeline: Train ➔ Register ➔ Validate...');
+    addMessage('ml', `Initiating MLOps Pipeline for: ${selectedModel}...`);
     try {
+        // Send the USER SELECTED model to the backend
         const response = await fetch(`${API_BASE_URL}/api/v1/ml/train`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ modelType: 'sepsis-detector' })
+            body: JSON.stringify({ modelType: selectedModel })
         });
         const data = await response.json();
-        addMessage('ml', '✓ Training complete on GPU cluster', 'success');
-        addMessage('registry', `✓ Registered: ${data.validation_report.model_id}`);
-        addMessage('validation', `✓ Safety Gate: ${data.status.toUpperCase()}`);
-        addMessage('validation', `→ Bias Audit: ${data.validation_report.audit_log.bias_audit ? 'Clean' : 'Flagged'}`);
-    } catch (error) { addMessage('error', 'Pipeline Failed'); }
+        
+        addMessage('ml', `✓ Training complete: ${selectedModel} (GPU Cluster)`, 'success');
+        addMessage('registry', `✓ Registered Plugin: ${data.validation_report.model_id}`);
+        
+        if (data.validation_report.approved) {
+             addMessage('validation', `✓ Safety Gate PASSED. ${selectedModel} is live.`);
+        } else {
+             addMessage('validation', `X Safety Gate REJECTED. ${selectedModel} blocked.`, 'error');
+        }
+    } catch (e) { addMessage('error', 'Pipeline Failed'); }
   };
 
   // --- 6. A/B MODEL COMPARISON ---
@@ -352,9 +359,22 @@ const MicroservicesSimulator = () => {
             <button onClick={simulateDeviceStream} disabled={!isSystemHealthy} className="px-4 py-4 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold flex flex-col items-center gap-2 transition disabled:opacity-30">
               <Wifi size={24}/> <span className="text-[10px] uppercase">IoMT (HAL)</span>
             </button>
-            <button onClick={simulateMLTraining} disabled={!isSystemHealthy} className="px-4 py-4 bg-orange-600 hover:bg-orange-500 rounded-lg font-bold flex flex-col items-center gap-2 transition disabled:opacity-30">
-              <Cpu size={24}/> <span className="text-[10px] uppercase">MLOps Pipe</span>
-            </button>
+            <div className="flex flex-col gap-1">
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={!isSystemHealthy}
+                className="bg-slate-900 border border-purple-500/50 text-[10px] rounded px-2 py-1 text-center outline-none focus:border-purple-400"
+              >
+                <option value="sepsis-detector">Sepsis (LSTM)</option>
+                <option value="diabetes-risk">Diabetes (XGB)</option>
+                <option value="chest-xray-v2">Pneumonia (CNN)</option>
+                <option value="readmission-v2">Readmit v2 (RF)</option>
+              </select>
+              <button onClick={simulateMLTraining} disabled={!isSystemHealthy} className="px-4 py-2 bg-orange-600 hover:bg-orange-500 rounded-lg font-bold flex flex-col items-center gap-1 transition disabled:opacity-30 flex-1">
+                <Cpu size={20}/> <span className="text-[10px] uppercase">Train Plugin</span>
+              </button>
+            </div>
             <button onClick={compareModelVersions} disabled={!patientData} className="px-4 py-4 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold flex flex-col items-center gap-2 transition disabled:opacity-30">
               <Boxes size={24}/> <span className="text-[10px] uppercase">A/B Compare</span>
             </button>
