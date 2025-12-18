@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, Database, Shield, Cpu, Wifi, HardDrive, AlertCircle, CheckCircle } from 'lucide-react';
 
-// Configuration for API endpoints (assumes API Gateway is on port 8000)
+// Configuration for API endpoints
 const API_BASE_URL = 'https://didactic-broccoli-wrx56qq7467jc579j-8000.app.github.dev';
 
 const MicroservicesSimulator = () => {
@@ -18,8 +18,9 @@ const MicroservicesSimulator = () => {
   const [mlPrediction, setMlPrediction] = useState(null);
   const [securityStatus, setSecurityStatus] = useState('idle');
   const [isSystemHealthy, setIsSystemHealthy] = useState(false);
+  const [halStatus, setHalStatus] = useState({ online: true, buffer: 0 });
 
-  // Helper for delays (still useful for UI pacing)
+  // Helper for delays
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   const addMessage = (service, text, type = 'info') => {
@@ -33,22 +34,54 @@ const MicroservicesSimulator = () => {
     setMessages(prev => [...prev, msg].slice(-15));
   };
 
-  // REAL implementation: Pings the API Gateway to check container health
-  const startAllServices = async () => {
-    addMessage('system', 'Initiating handshake with Healthcare OS Kernel...', 'info');
+  // HAL Control: Toggle Network
+  const toggleNetwork = async () => {
+    const newStatus = !halStatus.online;
+    addMessage('system', `[HAL] ${newStatus ? 'Connecting' : 'Severing'} Network Link...`, 'warning');
     
     try {
-      // We expect the API Gateway to return a status object for all subsystems
-      // You will need to implement /health/system at your gateway
-      const response = await fetch(`${API_BASE_URL}/health/system`);
-      
-      if (!response.ok) {
-        throw new Error(`Gateway responded with ${response.status}`);
-      }
+        await fetch(`${API_BASE_URL}/api/v1/hal/network`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ status: newStatus })
+        });
+        setHalStatus(prev => ({ ...prev, online: newStatus }));
+    } catch (e) { addMessage('error', 'HAL Control Failed'); }
+  };
 
+  // HAL Control: Simulate Kernel Stress
+  const simulateKernelStress = async () => {
+    addMessage('system', 'Starting Kernel Scheduler Stress Test...', 'info');
+    
+    // 1. Send Low Priority Background Task
+    fetch(`${API_BASE_URL}/api/v1/kernel/scheduler`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ taskType: 'Log_Backup', priority: 'NORMAL' })
+    }).then(r => r.json()).then(d => 
+        addMessage('system', `[Kernel] Background Task finished (${d.latency_ms}ms)`, 'info')
+    );
+
+    // 2. Immediately Send Critical Task
+    await delay(100); 
+    addMessage('ml', '⚠ INJECTING CRITICAL ALERT (Priority: HIGH)', 'error');
+    
+    fetch(`${API_BASE_URL}/api/v1/kernel/scheduler`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ taskType: 'Sepsis_Alert', priority: 'CRITICAL' })
+    }).then(r => r.json()).then(d => 
+        addMessage('cdss', `[Kernel] CRITICAL TASK PROCESSED (${d.latency_ms}ms) - Preempted Background Task`, 'success')
+    );
+  };
+
+  const startAllServices = async () => {
+    addMessage('system', 'Initiating handshake with Healthcare OS Kernel...', 'info');
+    try {
+      const response = await fetch(`${API_BASE_URL}/health/system`);
+      if (!response.ok) throw new Error(`Gateway responded with ${response.status}`);
       const healthData = await response.json();
       
-      // Update UI based on REAL backend status
       setActiveServices({
         fhir: healthData.services.fhir,
         device: healthData.services.device,
@@ -60,23 +93,14 @@ const MicroservicesSimulator = () => {
       setIsSystemHealthy(true);
       addMessage('system', '✓ Connection established: All Docker containers active', 'success');
       addMessage('fhir', `✓ FHIR R4 Server at ${healthData.endpoints.fhir}`, 'success');
-
     } catch (error) {
-      console.error(error);
       addMessage('error', `Connection Failed: Is Docker running? (${error.message})`, 'error');
       setIsSystemHealthy(false);
     }
   };
 
-  // Stop services (Client-side reset only)
   const stopAllServices = () => {
-    setActiveServices({
-      fhir: false,
-      device: false,
-      ml: false,
-      security: false,
-      cdss: false
-    });
+    setActiveServices({ fhir: false, device: false, ml: false, security: false, cdss: false });
     setMessages([]);
     setPatientData(null);
     setMlPrediction(null);
@@ -85,25 +109,19 @@ const MicroservicesSimulator = () => {
     addMessage('system', 'Disconnected from OS Kernel', 'warning');
   };
 
-  // REAL Implementation: Sends data to the backend
   const simulatePatientAdmission = async () => {
     if (!activeServices.fhir) {
       addMessage('error', 'Cannot admit patient: FHIR service is unreachable', 'error');
       return;
     }
-
     setSecurityStatus('checking');
     addMessage('security', 'Requesting authorization token from Security Service...');
     
     try {
-      // 1. Get Auth Token (Real Call)
-      // const authRes = await fetch(`${API_BASE_URL}/auth/token`, { method: 'POST' }); 
-      // mocking auth delay for now, but keeping structure ready
       await delay(500); 
       setSecurityStatus('approved');
       addMessage('security', '✓ Access Granted (JWT Token Issued)', 'success');
 
-      // 2. Create Patient in FHIR Server (Real Call via Gateway)
       const patientPayload = {
         resourceType: "Patient",
         name: [{ family: "Doe", given: ["John"] }],
@@ -112,26 +130,22 @@ const MicroservicesSimulator = () => {
       };
 
       addMessage('api-gateway', 'POST /api/v1/patients (Routing to HAPI FHIR)...');
-      
       const response = await fetch(`${API_BASE_URL}/api/v1/patients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patientPayload)
       });
-
       const newPatient = await response.json();
       
       setPatientData({
         id: newPatient.id || 'FHIR-GEN-ID',
         name: 'John Doe',
         age: 45,
-        condition: 'Hypertension', // This would come from an Observation resource in a real full flow
+        condition: 'Hypertension',
         vitals: { heartRate: 88, bloodPressure: '145/92', temperature: 98.6 }
       });
-
       addMessage('fhir', `✓ Resource Created: Patient/${newPatient.id}`, 'success');
 
-      // 3. Trigger CDSS Analysis (Real Call)
       if (activeServices.cdss) {
         addMessage('cdss', 'Triggering rules engine for new patient...');
         const cdssRes = await fetch(`${API_BASE_URL}/api/v1/cdss/evaluate`, {
@@ -141,21 +155,17 @@ const MicroservicesSimulator = () => {
         const advice = await cdssRes.json();
         addMessage('cdss', `Alert: ${advice.recommendation}`, 'warning');
       }
-
     } catch (error) {
       addMessage('error', `Workflow Failed: ${error.message}`, 'error');
     }
   };
 
-  // REAL Implementation: Trigger ML Training on Python Container
   const simulateMLTraining = async () => {
     if (!activeServices.ml) {
       addMessage('error', 'ML Service container is offline', 'error');
       return;
     }
-
     addMessage('ml', 'Sending training job to Python/Flask service...');
-
     try {
         const response = await fetch(`${API_BASE_URL}/api/v1/ml/train`, {
             method: 'POST',
@@ -165,7 +175,6 @@ const MicroservicesSimulator = () => {
 
         if (response.ok) {
             addMessage('ml', '✓ Job accepted: Training started on GPU/CPU', 'success');
-            // Poll for status or wait for socket (simplified here)
             await delay(2000); 
             addMessage('ml', '✓ Model persisted to /models/readmission_v2.pkl', 'success');
         } else {
@@ -176,17 +185,14 @@ const MicroservicesSimulator = () => {
     }
   };
   
-  // COMPREHENSIVE PROOF: Handles Websocket, Physics REST, and Legacy REST
   const simulateDeviceStream = async () => {
     if (!activeServices.device) {
       addMessage('error', 'Device Gateway Offline', 'error');
       return;
     }
 
-    // --- PHASE 1: HIGH-SPEED WEBSOCKET (Modern IoMT) ---
     addMessage('device', 'Starting Phase 1: High-Speed IoMT Stream (WebSocket)...');
     
-    // Handle switching between ws:// and wss:// automatically
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + '/live/stream';
     let socket;
@@ -201,25 +207,25 @@ const MicroservicesSimulator = () => {
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'stream_frame') {
-                // Log occasionally to show speed without flooding
+                setHalStatus({ online: data.hal.network, buffer: data.hal.bufferSize });
+                
                 if (Math.random() > 0.8) {
                     addMessage('device', `⚡ Live: HR ${data.vitals.hr} | SpO2 ${data.vitals.spo2}%`);
                 }
-                // Handle Critical Alert from Edge
                 if (data.alert) {
                     addMessage('ml', `⚠ EDGE ALERT: ${data.alert} detected!`, 'warning');
                 }
+            } else if (data.type === 'hal_event') {
+                addMessage('warning', `[HAL] Network Down. Data buffered in Edge RAM.`, 'warning');
             } else if (data.type === 'db_sync_event') {
                 addMessage('fhir', '✓ Smart Edge Sync: Batch saved to FHIR', 'success');
             }
         };
 
         socket.onerror = (error) => {
-             // Sockets can be flaky in some cloud environments, fail gracefully
              addMessage('error', 'WebSocket connection issue - check proxy');
         };
 
-        // Run WebSocket for 6 seconds, then move to Phase 2
         setTimeout(async () => {
             socket.close();
             addMessage('device', 'Phase 1 Complete. Switching to Driver Tests...');
@@ -230,18 +236,15 @@ const MicroservicesSimulator = () => {
         addMessage('error', `WS Error: ${e.message}`);
     }
 
-    // --- PHASE 2 & 3: REST DRIVERS (Physics & Legacy) ---
     const runRestDrivers = async () => {
         await delay(1000);
         let opticalSuccess = false;
         let legacySuccess = false;
         
-        // SCENARIO: RAW PHYSICS
         addMessage('device', 'Phase 2: Raw Sensor Physics (Optical)...');
         try {
             const res1 = await fetch(`${API_BASE_URL}/api/v1/devices/optical`, { method: 'POST' });
             if (!res1.ok) throw new Error(res1.statusText);
-            
             const data1 = await res1.json();
             
             addMessage('device', `Input: R=${data1.raw_input.red.toFixed(2)}v / IR=${data1.raw_input.ir.toFixed(2)}v`);
@@ -254,12 +257,10 @@ const MicroservicesSimulator = () => {
 
         await delay(1500);
 
-        // SCENARIO: LEGACY PROTOCOL
         addMessage('device', 'Phase 3: Legacy Equipment (Serial/Text)...');
         try {
             const res2 = await fetch(`${API_BASE_URL}/api/v1/devices/legacy`, { method: 'POST' });
             if (!res2.ok) throw new Error(res2.statusText);
-            
             const data2 = await res2.json();
             
             addMessage('device', `Input: "${data2.raw_input}"`);
@@ -270,7 +271,6 @@ const MicroservicesSimulator = () => {
             addMessage('error', `Legacy Driver Fail: ${e.message}`); 
         }
 
-        // Only show success if BOTH passed
         if (opticalSuccess && legacySuccess) {
             addMessage('system', '✓ ALL DEVICE TESTS PASSED: Universal Abstraction Proven', 'success');
         } else {
@@ -368,6 +368,35 @@ const MicroservicesSimulator = () => {
               <Cpu className="w-4 h-4" /> Train Risk Model
             </button>
           </div>
+
+          {/* New HAL Controls - Correctly Placed Here */}
+          <div className="flex gap-3 mt-4 pt-4 border-t border-slate-700">
+                <button
+                    onClick={toggleNetwork}
+                    className={`px-6 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
+                        halStatus.online ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'
+                    } text-white`}
+                >
+                    <Wifi className="w-4 h-4" /> 
+                    {halStatus.online ? 'Simulate Network Cut' : 'Restore Network'}
+                </button>
+                
+                <button
+                    onClick={simulateKernelStress}
+                    className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition flex items-center gap-2"
+                >
+                    <Cpu className="w-4 h-4" /> Test Kernel Scheduler
+                </button>
+            </div>
+            
+            {/* HAL Status Display */}
+            {!halStatus.online && (
+                <div className="mt-2 bg-red-900/30 border border-red-500 rounded p-2 text-center">
+                    <span className="text-red-200 text-sm font-bold animate-pulse">
+                        ⚠ EDGE MODE ACTIVE: {halStatus.buffer} records buffered in RAM
+                    </span>
+                </div>
+            )}
         </div>
 
         {/* Layout for logs and stats */}
@@ -398,7 +427,7 @@ const MicroservicesSimulator = () => {
                  </div>
             </div>
 
-             {/* Live Data Panel (Right Side) */}
+            {/* Live Data Panel (Right Side) */}
             <div className="space-y-6">
                 {patientData && (
                 <div className="bg-slate-800 rounded-lg p-4 border border-blue-600 shadow-md">
