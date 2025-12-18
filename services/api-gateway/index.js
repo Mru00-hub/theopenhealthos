@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const { createProxyMiddleware } = require('http-proxy-middleware'); // Import Proxy
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -15,6 +16,16 @@ const SERVICES = {
 };
 
 app.use(cors()); // Allow React frontend to connect
+// Forwards wss://gateway/live/stream -> ws://device-gateway/
+const wsProxy = createProxyMiddleware({ 
+  target: SERVICES.device, // e.g. http://device-gateway:8082
+  changeOrigin: true, 
+  ws: true, // Enable WebSocket support
+  logLevel: 'debug'
+});
+
+// Register the proxy route
+app.use('/live/stream', wsProxy);
 app.use(express.json());
 
 // 1. SYSTEM HEALTH CHECK (The "Connect" Button Logic)
