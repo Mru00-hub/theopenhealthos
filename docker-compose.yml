@@ -57,6 +57,48 @@ services:
       - hos-network
     depends_on:
       - fhir-server
+      - model-registry      # Added for cleaner logs
+      - validation-gateway  # Added for cleaner logs
+      - llm-service         # Added for cleaner logs
+    
+    # The Mandatory Change: Installing requests
+    command: sh -c "pip install flask requests && python app.py"
+
+  model-registry:
+    image: python:3.9-slim
+    container_name: hos-model-registry
+    working_dir: /app
+    volumes:
+      - ./services/model-registry:/app
+    command: sh -c "pip install flask && python app.py"
+    ports:
+      - "5001:5001"
+    networks:
+      - hos-network
+
+  validation-gateway:
+    image: python:3.9-slim
+    container_name: hos-validation-gateway
+    working_dir: /app
+    volumes:
+      - ./services/validation-gateway:/app
+    command: sh -c "pip install flask && python app.py"
+    ports:
+      - "5002:5002"
+    networks:
+      - hos-network
+
+  llm-service:
+    image: python:3.9-slim
+    container_name: hos-llm-service
+    working_dir: /app
+    volumes:
+      - ./services/llm-service:/app
+    command: sh -c "pip install flask && python app.py"
+    ports:
+      - "5003:5003"
+    networks:
+      - hos-network
 
   # Device Gateway - HL7, DICOM, IoMT integration
   device-gateway:
