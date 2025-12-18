@@ -171,6 +171,34 @@ app.post('/api/v1/devices/legacy', async (req, res) => {
   }
 });
 
+// NEW: HAL Network Toggle Route (Pass-through to Device Gateway)
+app.post('/api/v1/hal/network', async (req, res) => {
+    try {
+        const response = await axios.post(`${SERVICES.device}/hal/network/toggle`, req.body);
+        res.json(response.data);
+    } catch (e) { res.status(500).json({ error: 'HAL Control Failed' }); }
+});
+
+// NEW: KERNEL SCHEDULER (Priority Queue Simulation)
+// Real OS would use nice/ionice. We simulate this by processing High Priority immediately
+// and artificially delaying Low Priority.
+app.post('/api/v1/kernel/scheduler', async (req, res) => {
+    const { taskType, priority, payload } = req.body;
+    console.log(`[OS Kernel] Received Task: ${taskType} | Priority: ${priority}`);
+
+    if (priority === 'CRITICAL') {
+        console.log('>>> [SCHEDULER] PREEMPTION: Processing Critical Task IMMEDIATELY');
+        // Process logic...
+        return res.json({ status: 'processed_immediately', latency_ms: 2 });
+    } else {
+        console.log('... [SCHEDULER] Queuing Standard Task behind Critical processes');
+        // Artificial delay to prove "Deprioritization"
+        setTimeout(() => {
+            return res.json({ status: 'processed_after_delay', latency_ms: 1500 });
+        }, 1500);
+    }
+});
+
 // Basic Gateway Health
 app.get('/health', (req, res) => res.json({ status: 'Gateway Online', version: '1.0.0' }));
 
