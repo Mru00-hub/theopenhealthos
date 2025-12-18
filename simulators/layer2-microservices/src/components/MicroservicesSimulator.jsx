@@ -176,14 +176,56 @@ const MicroservicesSimulator = () => {
     }
   };
   
-  // Keep the device stream simulated locally for now unless we have a real WebSocket
+  // REAL Implementation: WebSocket Connection
   const simulateDeviceStream = async () => {
     if (!activeServices.device) {
-      addMessage('error', 'Device Gateway is offline', 'error');
+      addMessage('error', 'Device Gateway Offline', 'error');
       return;
     }
-    // ... (Keep existing logic or upgrade to WebSocket later)
-    addMessage('device', 'Stream started (Local Simulation)...'); 
+
+    addMessage('device', 'Establishing Secure WebSocket Tunnel (WSS)...');
+
+    // 1. Determine WS URL (Handle http vs https automatically)
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    // Use the API_BASE_URL but replace http/s with ws/s
+    const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + '/live/stream';
+    
+    try {
+        const socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+            addMessage('device', '✓ Tunnel Established. Receiving 10Hz Physics Stream...');
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'stream_frame') {
+                // We don't log every frame to text (too fast), just update UI or log occasionally
+                // For demo, let's log the raw physics occasionally
+                if (Math.random() > 0.9) { // Log 10% of frames to avoid clutter
+                     addMessage('device', `RAW: ${data.raw_physics.red}v | VITALS: ${data.vitals.spo2}%`);
+                }
+            } 
+            else if (data.type === 'db_sync_event') {
+                addMessage('fhir', '✓ Edge Sync: Data Batch persisted to FHIR Server', 'success');
+            }
+        };
+
+        socket.onerror = (error) => {
+            addMessage('error', 'WebSocket Error - Check Gateway Proxy');
+            socket.close();
+        };
+
+        // Close connection after 15 seconds to end simulation
+        setTimeout(() => {
+            socket.close();
+            addMessage('device', 'Stream session ended (15s limit)');
+        }, 15000);
+
+    } catch (e) {
+        addMessage('error', `WS Connection Failed: ${e.message}`);
+    }
   };
 
   return (
