@@ -126,6 +126,35 @@ app.post('/api/v1/cdss/evaluate', async (req, res) => {
   }
 });
 
+// 5a. RAW SENSOR STREAM (Physics)
+app.post('/api/v1/devices/optical', async (req, res) => {
+  try {
+    // Generate random raw voltages for simulation
+    const rawData = {
+        red_voltage: 0.8 + Math.random() * 0.4, // Random 0.8 - 1.2v
+        ir_voltage: 2.0 + Math.random() * 0.5   // Random 2.0 - 2.5v
+    };
+    const response = await axios.post(`${SERVICES.device}/stream/driver/optical`, rawData);
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: 'Optical driver failed' });
+  }
+});
+
+// 5b. LEGACY STREAM (Protocol)
+app.post('/api/v1/devices/legacy', async (req, res) => {
+  try {
+    // Generate a messy proprietary string
+    const randomHR = 60 + Math.floor(Math.random() * 40);
+    const messyString = `HEAD|ID:ERR|HR:0${randomHR}|VOLT:Low|END`;
+    
+    const response = await axios.post(`${SERVICES.device}/stream/driver/legacy`, { serial_string: messyString });
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: 'Legacy driver failed' });
+  }
+});
+
 // Basic Gateway Health
 app.get('/health', (req, res) => res.json({ status: 'Gateway Online', version: '1.0.0' }));
 
