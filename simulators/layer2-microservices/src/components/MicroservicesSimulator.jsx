@@ -38,7 +38,7 @@ const MicroservicesSimulator = () => {
   // --- 1. MODEL REGISTRY SYNC (Plugin Ecosystem) ---
   useEffect(() => {
     if (activeServices.ml) {
-      fetch(`${API_BASE_URL}/api/v1/ml/models`)
+      fetch(`${API_BASE_URL}/api/v1/registry/models`)
         .then(r => r.json())
         .then(data => setModelRegistry(Object.entries(data).map(([name, meta]) => ({ name, ...meta }))))
         .catch(() => console.warn("Registry sync pending..."));
@@ -107,7 +107,7 @@ const MicroservicesSimulator = () => {
         body: JSON.stringify({ name: [{ family: "Doe", given: ["John"] }], gender: "male", birthDate: isDriftTest ? "1930-01-01" : "1960-01-01" })
       });
       const newPatient = await response.json();
-      
+      if (!newPatient || !newPatient.id) throw new Error("Invalid FHIR response (No ID)");
       setPatientData({ id: newPatient.id, name: 'John Doe', age: simAge, condition: 'Hypertension', vitals: { heartRate: 88, bloodPressure: simBP } });
       addMessage('fhir', `✓ Resource Created: Patient/${newPatient.id.substring(0,8)}...`, 'success');
 
@@ -180,9 +180,12 @@ const MicroservicesSimulator = () => {
             const res1 = await fetch(`${API_BASE_URL}/api/v1/devices/optical`, { method: 'POST' });
             if (!res1.ok) throw new Error(res1.statusText);
             const data1 = await res1.json();
-            
-            addMessage('device', `Input: R=${data1.raw_input.red.toFixed(2)}v / IR=${data1.raw_input.ir.toFixed(2)}v`);
-            addMessage('device', `→ Math: Beer-Lambert Law Calculation`);
+            if (data1.raw_input) {
+              addMessage('device', `Input: R=${data1.raw_input.red.toFixed(2)}v / IR=${data1.raw_input.ir.toFixed(2)}v`);
+              addMessage('device', `→ Math: Beer-Lambert Law Calculation`);
+            } else {
+              throw new Error("Malformed Optical Data");
+            }
             addMessage('device', `→ Output: SpO2 ${data1.abstracted_value}% (Standardized)`);
             opticalSuccess = true;
         } catch(e) { addMessage('error', `Optical Driver Fail: ${e.message}`); }
@@ -426,7 +429,7 @@ const MicroservicesSimulator = () => {
                     <div className="text-slate-500 mb-2">// RAW FHIR JSON</div>
                     {`{`}
                     <div className="pl-4">"resourceType": "Patient",</div>
-                    <div className="pl-4">"id": "${patientData.id.substring(0,8)}...",</div>
+                    <div className="pl-4">"id": "${patientData.id?.substring(0,8)}...",</div>
                     <div className="pl-4">"risk_eval": "drift_check_complete"</div>
                     {`}`}
                 </div>
