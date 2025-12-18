@@ -4,8 +4,8 @@ import {
   AlertCircle, CheckCircle, Boxes, Zap, Server, Terminal 
 } from 'lucide-react';
 
-// Configuration for API endpoints
-const API_BASE_URL = 'https://didactic-broccoli-wrx56qq7467jc579j-8000.app.github.dev';
+// Use localhost for local Docker testing
+const API_BASE_URL = 'http://localhost:8000';
 
 const MicroservicesSimulator = () => {
   // --- STATE MANAGEMENT ---
