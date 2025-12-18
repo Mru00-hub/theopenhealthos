@@ -99,12 +99,10 @@ wss.on('connection', (ws, req) => {
 app.post('/stream/driver/legacy', async (req, res) => {
     const { serial_string, device_id } = req.body;
     
-    // Security Check
     if (!isDeviceAuthorized(device_id || 'Legacy-ECG-99')) {
         return res.status(403).json({ error: 'Device Unauthorized' });
     }
 
-    // "HEAD|ID:999|HR:078|END" -> Parse String
     try {
         console.log(`[Legacy Driver] Parsing: ${serial_string}`);
         const hrMatch = serial_string.match(/HR:(\d+)/);
@@ -113,7 +111,13 @@ app.post('/stream/driver/legacy', async (req, res) => {
         const heartRate = parseInt(hrMatch[1], 10);
         await publishToFHIR("Heart Rate", heartRate, "/min", "8867-4");
         
-        res.json({ status: 'success', abstracted_value: heartRate, source: 'Legacy Parser' });
+        // FIXED: Added 'raw_input' here
+        res.json({ 
+            status: 'success', 
+            abstracted_value: heartRate, 
+            source: 'Legacy Parser',
+            raw_input: serial_string 
+        });
     } catch (e) {
         res.status(400).json({ error: 'Protocol Mismatch' });
     }
@@ -123,11 +127,16 @@ app.post('/stream/driver/legacy', async (req, res) => {
 app.post('/stream/driver/optical', async (req, res) => {
     const { red_voltage, ir_voltage } = req.body;
     
-    // Raw Voltage -> Math -> FHIR
     const spo2 = calculateSpO2(red_voltage, ir_voltage);
     await publishToFHIR("Oxygen Saturation", spo2, "%", "59408-5");
     
-    res.json({ status: 'success', abstracted_value: spo2, source: 'Physics Engine' });
+    // FIXED: Added 'raw_input' here
+    res.json({ 
+        status: 'success', 
+        abstracted_value: spo2, 
+        source: 'Physics Engine',
+        raw_input: { red: red_voltage, ir: ir_voltage }
+    });
 });
 
 app.get('/health', (req, res) => res.json({ 
