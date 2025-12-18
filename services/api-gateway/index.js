@@ -159,9 +159,14 @@ app.post('/api/v1/devices/legacy', async (req, res) => {
     const randomHR = 60 + Math.floor(Math.random() * 40);
     const messyString = `HEAD|ID:ERR|HR:0${randomHR}|VOLT:Low|END`;
     
-    const response = await axios.post(`${SERVICES.device}/stream/driver/legacy`, { serial_string: messyString });
+    // CHANGED: Added 'device_id' to pass the new security check
+    const response = await axios.post(`${SERVICES.device}/stream/driver/legacy`, { 
+        serial_string: messyString,
+        device_id: 'Legacy-ECG-99' // This ID is authorized in the Device Gateway
+    });
     res.json(response.data);
   } catch (error) {
+    console.error('Legacy Driver Error:', error.message);
     res.status(500).json({ error: 'Legacy driver failed' });
   }
 });
