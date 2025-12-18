@@ -10,7 +10,36 @@ const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 8082;
 const FHIR_URL = process.env.FHIR_SERVER_URL || 'http://fhir-server:8080/fhir';
 
+// --- HAL STATE: NETWORK SIMULATION ---
+let isNetworkUp = true; // Default: Connected
+let edgeBuffer = [];    // HAL Memory Buffer
+
 app.use(express.json());
+
+// --- HAL CONTROL API ---
+// Allows the Frontend to simulate pulling the ethernet cable
+app.post('/hal/network/toggle', (req, res) => {
+    isNetworkUp = req.body.status;
+    console.log(`[HAL] Network Layer is now: ${isNetworkUp ? 'ONLINE' : 'OFFLINE'}`);
+    
+    // If coming back online, flush the buffer (Edge Sync)
+    if (isNetworkUp && edgeBuffer.length > 0) {
+        flushBuffer();
+    }
+    res.json({ status: isNetworkUp ? 'online' : 'offline', bufferSize: edgeBuffer.length });
+});
+
+async function flushBuffer() {
+    console.log(`[HAL] Network Restored. Flushing ${edgeBuffer.length} records from Edge Memory...`);
+    const batch = [...edgeBuffer];
+    edgeBuffer = []; // Clear memory
+    
+    // Simulate "Burst Sync"
+    for (const record of batch) {
+        await publishToFHIR(record.type, record.value, record.unit, record.code);
+    }
+    console.log('[HAL] Edge Sync Complete.');
+}
 
 // --- 0. OS SECURITY LAYER: DEVICE REGISTRY ---
 // Proves the OS only talks to authorized hardware
@@ -30,6 +59,11 @@ function calculateSpO2(red, ir) {
 
 // --- 2. FHIR INTEROPERABILITY UTILITY ---
 async function publishToFHIR(type, value, unit, code) {
+    if (!isNetworkUp) {
+        console.log(`[HAL] Network Offline. Buffering ${type} in Edge RAM.`);
+        edgeBuffer.push({ type, value, unit, code, timestamp: Date.now() });
+        return false; // Not sent to FHIR yet
+    }
     try {
         const observation = {
             resourceType: "Observation",
@@ -82,13 +116,15 @@ wss.on('connection', (ws, req) => {
             timestamp: Date.now(),
             raw_physics: { red: red_voltage.toFixed(3), ir: ir_voltage.toFixed(3) },
             vitals: { spo2, hr: heartRate },
-            alert: isCritical ? 'CRITICAL_DESATURATION' : null
+            alert: isCritical ? 'CRITICAL_DESATURATION' : null,
+            hal: { network: isNetworkUp, bufferSize: edgeBuffer.length }
         }));
 
         // Edge Filtering: Save to DB every 5 seconds OR immediately if Critical
         if (tickCount % 50 === 0 || isCritical) {
             const saved = await publishToFHIR("O2 Saturation", spo2, "%", "59408-5");
             if (saved) ws.send(JSON.stringify({ type: 'db_sync_event', status: 'saved_to_fhir' }));
+            else ws.send(JSON.stringify({ type: 'hal_event', status: 'buffered_in_ram' }));
         }
     }, 100);
 
