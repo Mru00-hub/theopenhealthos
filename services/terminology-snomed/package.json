@@ -1,0 +1,14 @@
+{
+  "name": "@theopenhealthos/terminology-snomed",
+  "version": "1.0.0",
+  "description": "SNOMED CT Lookup & Validation Service",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "fuse.js": "^6.6.2" 
+  }
+}
