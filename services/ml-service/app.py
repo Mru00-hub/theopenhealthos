@@ -19,6 +19,13 @@ REGISTRY_URL = "http://model-registry:5001"
 VALIDATION_URL = "http://validation-gateway:5002"
 LLM_URL = "http://llm-service:5003"
 
+model_versions = {}
+
+def get_next_version(model_id):
+    current = model_versions.get(model_id, 0)
+    model_versions[model_id] = current + 1
+    return f"v{1}.{model_versions[model_id]}"
+
 logger.info(f"ML Service Online. Configuration:")
 logger.info(f" - Registry: {REGISTRY_URL}")
 logger.info(f" - Validation: {VALIDATION_URL}")
@@ -46,26 +53,15 @@ def generate_shap(features, risk_score):
     return contributors
 
 def run_plugin_logic(model_id, features):
-    """Simulates loading different logic based on model type"""
-    # 1. READMISSION MODEL LOGIC
     if 'readmission' in model_id:
-        base_risk = 30
-        if features.get('age', 0) > 50: base_risk += 20
-        if features.get('condition') == 'Hypertension': base_risk += 30
-        score = min(base_risk + random.randint(-5, 5), 99)
+        score = 40 + (20 if features.get('age', 0) > 60 else 0)
         return {'score': score, 'label': 'High Risk' if score > 50 else 'Low Risk'}
-    
-    # 2. SEPSIS MODEL LOGIC
     elif 'sepsis' in model_id:
-        # Sepsis is more sensitive to vitals
-        score = 10
-        if features.get('systolic_bp', 120) < 90: score += 40
+        score = 10 + (50 if features.get('systolic_bp', 120) < 100 else 0)
         return {'score': score, 'label': 'Sepsis Alert' if score > 40 else 'Normal'}
-    
-    # 3. GENERIC FALLBACK
     else:
-        return {'score': random.randint(10, 90), 'label': 'Unknown Model'}
-
+        return {'score': random.randint(10, 90), 'label': 'General Risk'}
+        
 # --- ROUTES ---
 
 @app.route('/health', methods=['GET'])
@@ -117,44 +113,46 @@ def predict(model_id):
 @app.route('/train', methods=['POST'])
 def train_pipeline():
     model_name = request.json.get('modelType', 'custom-v1')
-    logger.info(f"Starting Training Pipeline for: {model_name}")
+    new_version = get_next_version(model_name)
     
-    # Step A: Train (Simulated)
-    logger.info("Step 1: Training on GPU Cluster (Simulated)...")
+    logger.info(f"Starting Training: {model_name} -> {new_version}")
+    
+    # 1. Simulate Training Time
     time.sleep(1)
-    metrics = {'accuracy': 0.88, 'bias_score': 0.02}
+    
+    # 2. Randomize Metrics (Realism)
+    # Accuracy fluctuates between 82% and 98%
+    accuracy = round(random.uniform(0.82, 0.98), 3)
+    metrics = {'accuracy': accuracy, 'bias_score': 0.02}
     
     try:
-        # Step B: Register (Call Registry)
-        logger.info(f"Step 2: Registering with {REGISTRY_URL}...")
-        reg_payload = {'name': model_name, 'owner': 'data-science', 'version': 'v1.0.1'}
-        reg_res = requests.post(f"{REGISTRY_URL}/models/register", json=reg_payload, timeout=5)
-        if reg_res.status_code != 200:
-            raise Exception(f"Registry returned {reg_res.status_code}: {reg_res.text}")
+        # 3. Register New Version
+        reg_payload = {'name': model_name, 'owner': 'hospital-ai', 'version': new_version}
+        requests.post(f"{REGISTRY_URL}/models/register", json=reg_payload, timeout=5)
         
-        # Step C: Validate
-        logger.info(f"Step 3: Requesting Safety Check from {VALIDATION_URL}...")
+        # 4. Validate
         val_res = requests.post(f"{VALIDATION_URL}/validate", json={'model_id': model_name, 'metrics': metrics}, timeout=5)
         val_data = val_res.json()
         is_approved = val_data.get('approved', False)
-        logger.info(f"Validation Result Approved?: {is_approved}") 
         
-        # Step D: Promote (Call Registry)
+        # 5. Promote if Good
         final_status = "rejected"
         if is_approved:
-            logger.info("Step 4: Promoting to Production...")
             requests.post(f"{REGISTRY_URL}/models/{model_name}/promote")
             final_status = "promoted_to_production"
             
         return jsonify({
-            'pipeline': 'Train -> Register -> Validate -> Promote',
             'status': final_status,
-            'validation_report': val_data
+            'validation_report': {
+                'model_id': f"{model_name}-{new_version}",
+                'accuracy': accuracy,
+                'approved': is_approved
+            }
         })
     except Exception as e:
-        logger.exception("Pipeline CRITICAL FAILURE") 
-        return jsonify({'error': f"Pipeline failed: {str(e)}"}), 500
-
+        logger.error(f"Pipeline Error: {e}")
+        return jsonify({'error': str(e)}), 500
+        
 # 3. GEN-AI PROXY
 @app.route('/genai/consult', methods=['POST'])
 def genai_consult():
