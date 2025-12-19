@@ -16,6 +16,7 @@ Healthcare systems today are fragmented, with data locked in silos and interoper
 - **Enables** AI/ML-powered clinical decision support
 - **Abstracts** medical device integration through unified interfaces
 - **Orchestrates** complex healthcare workflows across systems
+- **Empowers** developers to build modern applications seamlessly on a unified layer, without reinventing the integration and data flow wheel
 
 ## 🏗️ Architecture
 
