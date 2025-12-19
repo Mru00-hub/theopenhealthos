@@ -1,6 +1,10 @@
 version: '3.8'
 
 services:
+  # ==========================================
+  # LAYER 1: INFRASTRUCTURE & CORE KERNEL
+  # ==========================================
+  
   # FHIR Server - Healthcare data storage and API
   fhir-server:
     image: hapiproject/hapi:latest
@@ -40,6 +44,29 @@ services:
     networks:
       - hos-network
 
+  # API Gateway - Central entry point
+  api-gateway:
+    build: ./services/api-gateway
+    container_name: hos-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - FHIR_SERVICE=http://fhir-server:8080/fhir
+      - SECURITY_SERVICE=http://security-service:8081
+      - ML_SERVICE=http://ml-service:5000
+      - DEVICE_SERVICE=http://device-gateway:8082
+      - CDSS_SERVICE=http://cdss-engine:8083
+      - SEMANTIC_ALIGNER=http://semantic-aligner:3015 # Added new route
+    networks:
+      - hos-network
+    depends_on:
+      - fhir-server
+      - security-service
+
+  # ==========================================
+  # LAYER 2: INTELLIGENCE & DEVICES
+  # ==========================================
+
   # ML/AI Service - Predictions and analytics
   ml-service:
     build: ./services/ml-service
@@ -57,11 +84,9 @@ services:
       - hos-network
     depends_on:
       - fhir-server
-      - model-registry      # Added for cleaner logs
-      - validation-gateway  # Added for cleaner logs
-      - llm-service         # Added for cleaner logs
-    
-    # The Mandatory Change: Installing requests
+      - model-registry
+      - validation-gateway
+      - llm-service
     command: sh -c "pip install flask flask-cors requests && python app.py"
 
   model-registry:
@@ -100,7 +125,7 @@ services:
     networks:
       - hos-network
 
-  # Device Gateway - HL7, DICOM, IoMT integration
+  # Device Gateway (Legacy/IoT Hub)
   device-gateway:
     build: ./services/device-gateway
     container_name: hos-device-gateway
@@ -117,7 +142,7 @@ services:
     depends_on:
       - fhir-server
 
-  # CDSS Engine - Clinical Decision Support
+  # CDSS Engine
   cdss-engine:
     build: ./services/cdss-engine
     container_name: hos-cdss
@@ -135,28 +160,142 @@ services:
       - fhir-server
       - ml-service
 
-  # API Gateway - Central entry point
-  api-gateway:
-    build: ./services/api-gateway
-    container_name: hos-api-gateway
+  # ==========================================
+  # LAYER 4: CONTEXT REFINERY & INTEROPERABILITY
+  # ==========================================
+  
+  # --- HPS INGESTION FLEET (Adapters) ---
+
+  adapter-hl7:
+    build: ./services/adapter-hl7-v2
+    container_name: hos-adapter-hl7
     ports:
-      - "8000:8000"
+      - "3001:3001"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+
+  adapter-genomics:
+    build: ./services/adapter-genomics
+    container_name: hos-adapter-genomics
+    ports:
+      - "3002:3002"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+
+  adapter-pathology:
+    build: ./services/adapter-pathology
+    container_name: hos-adapter-pathology
+    ports:
+      - "3003:3003"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+
+  adapter-sdoh:
+    build: ./services/adapter-sdoh
+    container_name: hos-adapter-sdoh
+    ports:
+      - "3004:3004"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+
+  adapter-research:
+    build: ./services/adapter-research
+    container_name: hos-adapter-research
+    ports:
+      - "3005:3005"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 10s
+
+  # --- SEMANTIC FABRIC (Terminologies) ---
+
+  terminology-snomed:
+    build: ./services/terminology-snomed
+    container_name: hos-term-snomed
+    ports:
+      - "3010:3010"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 10s
+
+  terminology-loinc:
+    build: ./services/terminology-loinc
+    container_name: hos-term-loinc
+    ports:
+      - "3011:3011"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3011/health"]
+      interval: 30s
+      timeout: 10s
+
+  terminology-rxnorm:
+    build: ./services/terminology-rxnorm
+    container_name: hos-term-rxnorm
+    ports:
+      - "3012:3012"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3012/health"]
+      interval: 30s
+      timeout: 10s
+
+  # --- CONTEXT PROCESSORS ---
+
+  semantic-aligner:
+    build: ./services/semantic-aligner
+    container_name: hos-semantic-aligner
+    ports:
+      - "3015:3015"
     environment:
-      - FHIR_SERVICE=http://fhir-server:8080/fhir
-      - SECURITY_SERVICE=http://security-service:8081
-      - ML_SERVICE=http://ml-service:5000
-      - DEVICE_SERVICE=http://device-gateway:8082
-      - CDSS_SERVICE=http://cdss-engine:8083
+      - URL_SNOMED=http://terminology-snomed:3010
+      - URL_LOINC=http://terminology-loinc:3011
+      - URL_RXNORM=http://terminology-rxnorm:3012
     networks:
       - hos-network
     depends_on:
-      - fhir-server
-      - security-service
-      - ml-service
-      - device-gateway
-      - cdss-engine
+      - terminology-snomed
+      - terminology-loinc
+      - terminology-rxnorm
 
-  # PostgreSQL - Relational data storage
+  mapper-canonical:
+    build: ./services/mapper-canonical
+    container_name: hos-mapper-canonical
+    ports:
+      - "3016:3016"
+    networks:
+      - hos-network
+    depends_on:
+      - semantic-aligner
+
+  # ==========================================
+  # SUPPORT SERVICES
+  # ==========================================
+
   postgres:
     image: postgres:15-alpine
     container_name: hos-postgres
@@ -172,7 +311,6 @@ services:
     networks:
       - hos-network
 
-  # Redis - Caching and session management
   redis:
     image: redis:7-alpine
     container_name: hos-redis
@@ -184,7 +322,6 @@ services:
     networks:
       - hos-network
 
-  # MongoDB - Document storage for audit logs
   mongodb:
     image: mongo:7
     container_name: hos-mongodb
@@ -199,13 +336,12 @@ services:
     networks:
       - hos-network
 
-  # RabbitMQ - Message queue for async processing
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: hos-rabbitmq
     ports:
-      - "5672:5672"  # AMQP
-      - "15672:15672"  # Management UI
+      - "5672:5672"
+      - "15672:15672"
     environment:
       - RABBITMQ_DEFAULT_USER=hos_admin
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-dev_password}
@@ -214,7 +350,10 @@ services:
     networks:
       - hos-network
 
-  # Simulator UI - Layer 2 Microservices Simulator
+  # ==========================================
+  # SIMULATOR UIs
+  # ==========================================
+
   simulator-ui:
     build: ./simulators/layer2-microservices
     container_name: hos-simulator-ui
@@ -223,6 +362,8 @@ services:
     environment:
       - REACT_APP_API_GATEWAY=http://localhost:8000
       - REACT_APP_FHIR_SERVER=http://localhost:8080/fhir
+      # Points to the Aligner for "Clean" Data
+      - REACT_APP_SEMANTIC_ALIGNER=http://localhost:3015 
     volumes:
       - ./simulators/layer2-microservices:/app
       - /app/node_modules
@@ -230,8 +371,8 @@ services:
       - hos-network
     depends_on:
       - api-gateway
+      - semantic-aligner
 
-  # Architecture Explorer - Layer 1
   architecture-explorer:
     build: ./simulators/layer1-architecture-explorer
     container_name: hos-arch-explorer
@@ -243,7 +384,6 @@ services:
     networks:
       - hos-network
 
-  # Patient Journey - Layer 3
   patient-journey:
     build: ./simulators/layer3-patient-journey
     container_name: hos-patient-journey
@@ -266,3 +406,4 @@ volumes:
 networks:
   hos-network:
     driver: bridge
+
