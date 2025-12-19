@@ -136,11 +136,12 @@ def train_pipeline():
         logger.info(f"Step 3: Requesting Safety Check from {VALIDATION_URL}...")
         val_res = requests.post(f"{VALIDATION_URL}/validate", json={'model_id': model_name, 'metrics': metrics}, timeout=5)
         val_data = val_res.json()
-        logger.info(f"Validation Result: {val_data['status']}")
+        is_approved = val_data.get('approved', False)
+        logger.info(f"Validation Result Approved?: {is_approved}") 
         
         # Step D: Promote (Call Registry)
         final_status = "rejected"
-        if val_data['approved']:
+        if is_approved:
             logger.info("Step 4: Promoting to Production...")
             requests.post(f"{REGISTRY_URL}/models/{model_name}/promote")
             final_status = "promoted_to_production"
