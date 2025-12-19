@@ -3,146 +3,104 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 8083;
 
-// Service URLs
+// Service URLs (Docker Network)
 const ML_URL = process.env.ML_SERVICE_URL || 'http://ml-service:5000';
 const FHIR_URL = process.env.FHIR_SERVER_URL || 'http://fhir-server:8080/fhir';
 
 app.use(express.json());
 
-// Decision cache to show version impact
+// In-memory audit log for the "Analytics" tab
 const decisionHistory = [];
 
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     service: 'cdss-engine', 
-    version: '0.4.0-multi-model', // Updated version
-    ml_integration: true,
-    fhir_connected: true
+    version: '0.5.0-orchestrator', 
+    capabilities: ['multi-model-routing', 'clinical-rules', 'fhir-context']
   });
 });
 
-// KEEPING YOUR FEATURE: Compare Model Versions (A/B Testing Simulation)
-app.post('/compare-versions', async (req, res) => {
-  const { patientId, patientData, versions } = req.body;
-  
-  const results = await Promise.all(
-    versions.map(async (v) => {
-      const prediction = await mockPredictWithVersion(patientData, v);
-      return {
-        version: v,
-        risk_score: prediction.risk,
-        recommendation: generateRecommendation(prediction.risk),
-        changed_outcome: prediction.risk > 50 ? 'admit' : 'discharge'
-      };
-    })
-  );
-  
-  const v1_decision = results[0].changed_outcome;
-  const v2_decision = results[1].changed_outcome;
-  
-  res.json({
-    comparison: results,
-    clinical_impact: v1_decision !== v2_decision ? 
-      `⚠️ CRITICAL: Model upgrade changed decision from ${v1_decision} to ${v2_decision}` :
-      'No decision change',
-    audit_trail: true
-  });
-});
-
-// CRITICAL UPDATE: Integrated Evaluation with Multi-Model Routing
+// --- 1. CORE ENGINE: EVALUATE PATIENT (Orchestration) ---
 app.post('/evaluate', async (req, res) => {
   const { patientId, patientData, requestedModelVersion } = req.body;
-  console.log(`[CDSS] Evaluating Patient ${patientId}...`);
+  const targetModel = requestedModelVersion || 'readmission-v1';
+  
+  console.log(`[CDSS] Orchestrating Evaluation for ${patientId} using Plugin: ${targetModel}`);
 
   try {
-    // 1. Fetch patient context from FHIR
+    // A. CONTEXT ASSEMBLY (FHIR + Input)
+    // We prioritize FHIR data (Source of Truth) but fallback to Request Data
     let fhirContext = {};
     try {
       const fhirRes = await axios.get(`${FHIR_URL}/Patient/${patientId}`);
-      // Calculate age from birthDate
       const birthDate = fhirRes.data.birthDate;
       const age = birthDate ? Math.floor((new Date() - new Date(birthDate)) / 31557600000) : 45;
-      
-      fhirContext = {
-        age: age,
-        conditions: fhirRes.data.condition || []
-      };
+      fhirContext = { age: age, conditions: fhirRes.data.condition || [] };
     } catch (e) {
-      console.warn('[CDSS] FHIR unavailable, using request data');
+      console.warn('[CDSS] Warning: FHIR Context unavailable, relying on frontend input');
     }
 
-    // 2. ML Inference (UPDATED LOGIC)
+    // Prepare Standardized Feature Vector for ML Service
     const features = {
       age: fhirContext.age || patientData?.age || 45,
       condition: patientData?.condition || 'Unknown',
       systolic_bp: parseInt(patientData?.vitals?.bloodPressure?.split('/')[0] || 120)
     };
 
-    // ROUTING CHANGE: Construct the specific URL for the model (e.g., /predict/readmission-v1)
-    const targetModel = requestedModelVersion || 'readmission-v1';
-    console.log(`[CDSS] Routing inference to model: ${targetModel}`);
-
-    // Call the new ML Service endpoint
-    const mlResponse = await axios.post(`${ML_URL}/predict/${targetModel}`, { 
-      features 
-    });
+    // B. ML INFERENCE (Real Network Call)
+    console.log(`[CDSS] Calling ML Service: POST ${ML_URL}/predict/${targetModel}`);
+    const mlResponse = await axios.post(`${ML_URL}/predict/${targetModel}`, { features });
     const aiResult = mlResponse.data;
 
-    // 3. Clinical Rules Engine (Keeping your detailed logic)
+    // C. CLINICAL RULES ENGINE (Deterministic Logic)
     const ruleAlerts = applyClinicalRules(patientData || { age: features.age, ...patientData }, aiResult);
 
-    // 4. Risk Mitigation & Recommendations
+    // D. DECISION SYNTHESIS & SAFETY
     let finalRecommendation = "";
     let alertLevel = "info";
     let actionableItems = [];
 
-    if (aiResult.safety_guardrails.drift_detected) {
-      finalRecommendation = `⚠️ DATA DRIFT DETECTED: ${aiResult.safety_guardrails.drift_reasons.join(', ')}. Using protocol-based assessment.`;
-      alertLevel = "critical";
+    // Safety Guardrails (Drift Detection)
+    if (aiResult.safety_guardrails && aiResult.safety_guardrails.drift_detected) {
+      finalRecommendation = `⚠️ DATA DRIFT DETECTED: ${aiResult.safety_guardrails.drift_reasons.join(', ')}. AI Confidence Reduced.`;
+      alertLevel = "critical"; // Downgrade trust, upgrade alert urgency
       actionableItems = ['Manual physician review required', 'Validate vital signs accuracy'];
     } else {
+      // Standard Risk Stratification
       const risk = aiResult.prediction.risk_score;
       const label = aiResult.prediction.label;
       
       if (risk > 70) {
-        actionableItems = [
-          'Schedule follow-up within 24 hours',
-          'Activate care coordination team',
-          'Review medication adherence'
-        ];
+        actionableItems = ['Immediate Admit', 'Activate Sepsis Protocol', 'Page Resident'];
         alertLevel = "critical";
       } else if (risk > 50) {
-        actionableItems = [
-          'Schedule follow-up within 7 days',
-          'Patient education on warning signs'
-        ];
+        actionableItems = ['Schedule Follow-up (24hr)', 'Review Meds'];
         alertLevel = "warning";
       } else {
-        actionableItems = ['Standard discharge protocol'];
+        actionableItems = ['Standard Discharge'];
         alertLevel = "success";
       }
 
-      // Format Explainability
-      const contributors = aiResult.explainability.contributors
-        .map(c => `${c.feature} (${c.impact})`)
-        .join(', ');
+      // XAI Integration
+      const contributors = aiResult.explainability?.contributors
+        .map(c => `${c.feature}`)
+        .join(', ') || "None";
       
-      finalRecommendation = `Risk: ${risk}% (${label}). Drivers: ${contributors}.`;
+      finalRecommendation = `Risk: ${risk}% (${label}). Key Drivers: ${contributors}.`;
     }
 
-    // 5. Audit trail
+    // E. AUDIT LOGGING
     const decision = {
       timestamp: new Date().toISOString(),
       patientId,
-      modelVersion: aiResult.metadata.version || 'unknown',
+      modelVersion: aiResult.metadata.model,
       risk: aiResult.prediction.risk_score,
-      decision: alertLevel,
-      clinician_notified: alertLevel === 'critical'
+      outcome: alertLevel
     };
     decisionHistory.push(decision);
 
-    // 6. Response (Matching your frontend expectations)
+    // F. RETURN RESPONSE
     res.json({
       timestamp: decision.timestamp,
       patientId,
@@ -150,7 +108,7 @@ app.post('/evaluate', async (req, res) => {
       recommendation: finalRecommendation,
       actions: actionableItems,
       source: {
-        ml_model: aiResult.metadata.model, // Updated to match new ML response
+        ml_model: aiResult.metadata.model,
         version: aiResult.metadata.version,
         governance: aiResult.metadata.governance
       },
@@ -160,67 +118,92 @@ app.post('/evaluate', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[CDSS] Error:', error.message);
+    console.error('[CDSS] Orchestration Failed:', error.message);
+    // Graceful Degradation
     res.json({ 
       status: 'error', 
-      recommendation: '⚠️ Systems unavailable. Manual clinical assessment required.',
-      source: 'Fallback',
-      actions: ['Page on-call physician', 'Use paper protocols']
+      recommendation: '⚠️ ML Service Unavailable. Defaulting to Safety Protocol.',
+      source: 'Fallback Engine',
+      actions: ['Use Paper Protocol', 'Check System Status'],
+      explainability: { contributors: [] }
     });
   }
 });
 
-// KEEPING YOUR FEATURE: Clinical Rules Engine
+// --- 2. FEATURE: REAL A/B TESTING (No Mocking) ---
+app.post('/compare-versions', async (req, res) => {
+  const { patientData, versions } = req.body;
+  // Default comparisons if none provided
+  const modelsToCompare = versions || ['readmission-v1', 'sepsis-v2'];
+  
+  console.log(`[CDSS] Running Real A/B Test: ${modelsToCompare.join(' vs ')}`);
+
+  try {
+    // Parallel Execution: Run both models at the same time
+    const results = await Promise.all(
+      modelsToCompare.map(async (v) => {
+        try {
+            const features = {
+                age: patientData?.age || 50,
+                condition: patientData?.condition || 'Unknown',
+                systolic_bp: 120
+            };
+            // HIT THE REAL SERVICE
+            const resp = await axios.post(`${ML_URL}/predict/${v}`, { features });
+            
+            return {
+                version: v,
+                risk_score: resp.data.prediction.risk_score,
+                recommendation: resp.data.prediction.risk_score > 50 ? 'High Risk' : 'Low Risk',
+                changed_outcome: resp.data.prediction.risk_score > 50 ? 'admit' : 'discharge'
+            };
+        } catch (e) {
+            console.error(`[CDSS] Model ${v} failed: ${e.message}`);
+            return { version: v, risk_score: 0, recommendation: 'Model Offline', changed_outcome: 'error' };
+        }
+      })
+    );
+    
+    // Impact Analysis
+    const v1 = results[0];
+    const v2 = results[1];
+    let impactMsg = 'No decision change';
+    
+    if (v1.changed_outcome !== v2.changed_outcome && v1.changed_outcome !== 'error') {
+        impactMsg = `⚠️ CRITICAL: Upgrade changes decision from ${v1.changed_outcome} to ${v2.changed_outcome}`;
+    }
+
+    res.json({
+      comparison: results,
+      clinical_impact: impactMsg,
+      audit_trail: true
+    });
+  } catch (e) {
+      res.status(500).json({ error: "Comparison Orchestration Failed" });
+  }
+});
+
+// --- HELPER: CLINICAL RULES ---
 function applyClinicalRules(patientData, aiResult) {
   const alerts = [];
-  
-  // Rule 1: Drug interaction check
-  if (patientData?.medications?.includes('ACE-inhibitor') && 
-      patientData?.labs?.potassium > 5.0) {
+  if (patientData?.age > 80 && aiResult.prediction.risk_score > 50) {
     alerts.push({
-      rule: 'DRUG-INTERACT-001',
+      rule: 'GERIATRIC-SEPSIS',
       severity: 'high',
-      message: 'ACE inhibitor + hyperkalemia risk'
+      message: 'Geriatric Sepsis Protocol Activated'
     });
   }
-  
-  // Rule 2: Age-based protocols (Using AI result context)
-  if (patientData?.age > 65 && aiResult.prediction.risk_score > 40) {
-    alerts.push({
-      rule: 'GERIATRIC-001',
-      severity: 'medium',
-      message: 'Geriatric care protocols recommended'
-    });
-  }
-  
   return alerts;
 }
 
-// KEEPING YOUR FEATURE: Recommendation Helper
-function generateRecommendation(riskScore) {
-  if (riskScore > 70) return 'Admit for observation';
-  if (riskScore > 50) return 'Discharge with close follow-up';
-  return 'Standard discharge';
-}
-
-// KEEPING YOUR FEATURE: Mock Prediction for A/B Testing
-async function mockPredictWithVersion(data, version) {
-  const baseRisk = data && data.age > 60 ? 55 : 35;
-  const versionDrift = version === 'v1.0.0' ? -10 : +5;
-  return { risk: baseRisk + versionDrift };
-}
-
-// KEEPING YOUR FEATURE: Analytics Endpoint
+// --- HELPER: ANALYTICS ---
 app.get('/analytics/decisions', (req, res) => {
-  const stats = {
+  res.json({
     total_decisions: decisionHistory.length,
-    critical_alerts: decisionHistory.filter(d => d.decision === 'critical').length,
-    avg_risk_score: decisionHistory.length ? decisionHistory.reduce((sum, d) => sum + d.risk, 0) / decisionHistory.length : 0,
-    model_versions_used: [...new Set(decisionHistory.map(d => d.modelVersion))]
-  };
-  res.json(stats);
+    recent_logs: decisionHistory.slice(-5)
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`CDSS Engine (Multi-Model Integrated) on port ${PORT}`);
+  console.log(`CDSS Engine (Multi-Model Orchestrator) active on port ${PORT}`);
 });
