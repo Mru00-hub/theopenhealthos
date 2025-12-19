@@ -173,9 +173,12 @@ const MicroservicesSimulator = () => {
              if (halStatus.buffer > 0) {
                  addMessage('fhir', `✓ RECOVERY: Flushed ${halStatus.buffer} Buffered Records to CDR`, 'success');
              } else {
-                 // Routine sync is silent or logged as info
-                 if (Math.random() > 0.8) addMessage('device', 'ℹ Routine Edge Sync (Batch Optimized)', 'info');
+                 addMessage('fhir', '✓ Routine Edge Sync (Batch)', 'success');
              }
+        }
+        // ADD THIS:
+        else if (data.type === 'traffic_event') {
+             addMessage('device', `ℹ ${data.msg}`, 'info');
         }
     };
 
@@ -373,13 +376,18 @@ const MicroservicesSimulator = () => {
           <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 overflow-y-auto h-40">
             <h3 className="text-slate-400 text-[10px] font-bold mb-2 uppercase tracking-widest flex items-center gap-2"><Server size={14}/> Platform Registry</h3>
             {modelRegistry.length > 0 ? modelRegistry.map(m => (
-              <div key={m.name} className="flex justify-between text-[9px] py-1 border-b border-slate-700/50">
-                <span className="text-slate-300">{m.name}</span>
-                <span className={`px-1 rounded ${m.status === 'production' ? 'text-green-400' : 'text-yellow-400'}`}>{m.status}</span>
-              </div>
-            )) : <div className="text-slate-600 text-[10px] italic py-4">Registry empty (Connect first)...</div>}
+                <div key={m.name} className="flex justify-between items-center text-[9px] py-1 border-b border-slate-700/50">
+                    <div className="flex flex-col">
+                      <span className="text-slate-300 font-bold">{m.name}</span>
+                      <span className="text-[8px] text-slate-500 font-mono">{m.version || 'v1.0.0'}</span>
+                    </div>
+                    <span className={`px-1 rounded ${m.status === 'production' ? 'text-green-400' : 'text-yellow-400'}`}>{m.status}</span>
+                </div>
+            )) : (
+                <div className="text-slate-600 text-[10px] italic py-4">Registry empty (Connect first)...</div>
+            )}
           </div>
-          
+
           {/* 3. Microservices Status */}
           <div className="col-span-2 bg-slate-800 p-4 rounded-lg border border-slate-700">
             <h3 className="text-slate-400 text-[10px] font-bold mb-3 uppercase tracking-widest">Microservices Mesh</h3>
