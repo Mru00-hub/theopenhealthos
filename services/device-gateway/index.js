@@ -125,6 +125,8 @@ wss.on('connection', (ws) => {
 
     const interval = setInterval(async () => {
         tickCount++;
+        
+        // Generate Physics
         const red = 0.8 + (Math.random() * 0.05);
         const ir = 2.0 + (Math.random() * 0.05);
         const spo2 = calculateSpO2(red, ir);
@@ -139,26 +141,41 @@ wss.on('connection', (ws) => {
             hal: { network: isNetworkUp, bufferSize: edgeBuffer.length }
         }));
 
-        // 2. INTELLIGENT SYNC LOGIC
-        // We only try to sync every 10 ticks (2 seconds) OR if Critical
+        // 2. INTELLIGENT SYNC LOGIC (Every 2 seconds)
         if (tickCount % 10 === 0 || isCritical) { 
             
             if (!isNetworkUp) {
-                // NETWORK DOWN: Buffer it
+                // A. NETWORK DOWN -> BUFFER
                 edgeBuffer.push({ type: "Oxygen Saturation", value: spo2, unit: "%" });
                 ws.send(JSON.stringify({ type: 'hal_event', status: 'buffered_in_ram' }));
             } else {
-                // NETWORK UP: Sync it
+                // B. NETWORK UP -> SYNC
+                
+                // First, check if we need to FLUSH a previous outage buffer
+                let flushedCount = 0;
+                if (edgeBuffer.length > 0) {
+                    console.log(`[Kernel] Flushing ${edgeBuffer.length} records...`);
+                    flushedCount = edgeBuffer.length;
+                    edgeBuffer = []; // CLEAR THE BUFFER (The Flush)
+                }
+
+                // Sync the current live value
                 const saved = await publishToFHIR("Oxygen Saturation", spo2, "%", "59408-5");
+                
                 if (saved) {
-                    ws.send(JSON.stringify({ type: 'db_sync_event', status: 'saved_to_fhir' }));
+                    ws.send(JSON.stringify({ 
+                        type: 'db_sync_event', 
+                        status: 'saved_to_fhir',
+                        flushed: flushedCount // Tell frontend how many we recovered
+                    }));
                 }
             }
         } 
         // 3. NO-OP LOGIC (Traffic Reduction Demo)
         else {
-             // Occasionally tell the frontend we are skipping to save bandwidth
-             if (Math.random() > 0.95) {
+             // Only log "Skipping" if the network is actually UP.
+             // If network is DOWN, silence is better so the "Buffering" messages stand out.
+             if (isNetworkUp && Math.random() > 0.90) {
                  ws.send(JSON.stringify({ type: 'traffic_event', msg: 'Skipping FHIR Sync (Bandwidth Opt.)' }));
              }
         }
