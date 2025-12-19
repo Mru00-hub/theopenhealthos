@@ -143,12 +143,11 @@ const MicroservicesSimulator = () => {
     } catch (error) { addMessage('error', `Workflow Failed: ${error.message}`, 'error'); }
   };
 
-  // --- 4. DEVICE STREAMING (Merged: Visuals + Drivers) ---
+  // --- 4. DEVICE STREAMING (Smart Edge + Driver Viz) ---
   const simulateDeviceStream = async () => {
     if (!activeServices.device) return addMessage('error', 'Device Gateway Offline', 'error');
 
-    // Phase 1: WebSocket (Visualization & HAL)
-    addMessage('device', 'Phase 1: High-Speed IoMT Stream (WebSocket)...');
+    addMessage('device', 'Phase 1: Establishing Secure WebSocket...');
     const wsUrl = API_BASE_URL.replace(/^http/, 'ws') + '/live/stream';
     const socket = new WebSocket(wsUrl);
 
@@ -157,32 +156,38 @@ const MicroservicesSimulator = () => {
     socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
         
-        // 1. Update HAL State (Network Status Source of Truth)
+        // 1. Update HAL State
         if (data.hal) {
             setHalStatus(prev => ({ ...prev, online: data.hal.network, buffer: data.hal.bufferSize }));
         }
 
-        // 2. Handle Stream Frames (Visualization)
+        // 2. Stream Visualization
         if (data.type === 'stream_frame') {
-             setDeviceStreamData(data); // Save for UI rendering
-             // Only log occasionally to avoid spam
-             if (Math.random() > 0.9) addMessage('device', `⚡ Live: HR ${data.vitals.hr} | SpO2 ${data.vitals.spo2}%`);
+             setDeviceStreamData(data);
         } 
-        // 3. Handle Database Sync Events (The "Flush")
+        
+        // 3. SMART EDGE LOGIC (Updated to use 'flushed' count)
         else if (data.type === 'db_sync_event') {
-             if (halStatus.buffer > 0) {
-                 addMessage('fhir', `✓ RECOVERY: Flushed ${halStatus.buffer} Buffered Records to CDR`, 'success');
+             if (data.flushed > 0) {
+                 // The backend told us it just emptied the buffer
+                 addMessage('fhir', `✓ RECOVERY: Flushed ${data.flushed} Buffered Records to CDR`, 'success');
              } else {
+                 // Normal sync
                  addMessage('fhir', '✓ Routine Edge Sync (Batch)', 'success');
              }
         }
-        // ADD THIS:
+        
+        // 4. HAL Events (Network Down)
+        else if (data.type === 'hal_event') {
+             addMessage('warning', '⚠ Network Down. Buffering at Edge...', 'warning');
+        }
+
+        // 5. Traffic Optimization
         else if (data.type === 'traffic_event') {
              addMessage('device', `ℹ ${data.msg}`, 'info');
         }
     };
 
-    // Close after 30 seconds (Gives you time to test HAL Severing)
     setTimeout(() => {
         socket.close();
         addMessage('device', 'Stream Session Ended.');
@@ -190,8 +195,6 @@ const MicroservicesSimulator = () => {
         setDriverStats(null);
     }, 30000); 
 
-    // Phase 2 & 3: Run REST Drivers immediately (Concurrency Test)
-    // We run this alongside the WebSocket to prove the kernel can handle both modes.
     runRestDrivers();
   };
 
