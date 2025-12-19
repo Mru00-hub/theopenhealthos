@@ -1,0 +1,50 @@
+[
+  {
+    "code": "161",
+    "display": "Acetaminophen",
+    "synonyms": ["Tylenol", "Paracetamol", "APAP"],
+    "tty": "IN", 
+    "class_id": "N02BE01",
+    "class_name": "Analgesics and Antipyretics"
+  },
+  {
+    "code": "1191",
+    "display": "Aspirin",
+    "synonyms": ["Acetylsalicylic acid", "ASA", "Bayer"],
+    "tty": "IN",
+    "class_id": "N02BA01",
+    "class_name": "Anti-inflammatory agents"
+  },
+  {
+    "code": "6809",
+    "display": "Metformin",
+    "synonyms": ["Glucophage", "Metformin hydrochloride"],
+    "tty": "IN",
+    "class_id": "A10BA02",
+    "class_name": "Biguanides (Antidiabetic)"
+  },
+  {
+    "code": "8640",
+    "display": "Prednisone",
+    "synonyms": ["Deltasone", "Rayos"],
+    "tty": "IN",
+    "class_id": "H02AB07",
+    "class_name": "Corticosteroids"
+  },
+  {
+    "code": "7052",
+    "display": "Morphine",
+    "synonyms": ["MS Contin", "Roxanol"],
+    "tty": "IN",
+    "class_id": "N02AA01",
+    "class_name": "Opioid Analgesics"
+  },
+  {
+    "code": "11289",
+    "display": "Warfarin",
+    "synonyms": ["Coumadin", "Jantoven"],
+    "tty": "IN",
+    "class_id": "B01AA03",
+    "class_name": "Anticoagulants"
+  }
+]
