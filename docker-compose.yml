@@ -293,6 +293,75 @@ services:
       - semantic-aligner
 
   # ==========================================
+  # LAYER 5: GOVERNANCE & SECURITY
+  # ==========================================
+
+  governance-pcrm:
+    build: ./services/governance-pcrm
+    container_name: hos-governance-pcrm
+    ports:
+      - "3020:3020"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3020/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  governance-rcf:
+    build: ./services/governance-rcf
+    container_name: hos-governance-rcf
+    ports:
+      - "3021:3021"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3021/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  governance-sas:
+    build: ./services/governance-sas
+    container_name: hos-governance-sas
+    ports:
+      - "3022:3022"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-prod}
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3022/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # LAYER 6: CLINICAL CONTEXT AWARENESS (CORE)
+  # ==========================================
+
+  context-awareness:
+    build: ./services/context-awareness
+    container_name: hos-cca-engine
+    ports:
+      - "4000:4000"
+    environment:
+      - PCRM_URL=http://governance-pcrm:3020
+      - RCF_URL=http://governance-rcf:3021
+      - FHIR_SERVER_URL=http://fhir-server:8080/fhir
+      - SEMANTIC_ALIGNER_URL=http://semantic-aligner:3015
+    networks:
+      - hos-network
+    depends_on:
+      - governance-pcrm
+      - governance-rcf
+      - governance-sas
+      - semantic-aligner
+      - fhir-server
+
+
+  # ==========================================
   # SUPPORT SERVICES
   # ==========================================
 
