@@ -70,7 +70,7 @@ services:
     working_dir: /app
     volumes:
       - ./services/model-registry:/app
-    command: sh -c "pip install flask && python app.py"
+    command: sh -c "pip install flask flask-cors && python app.py"
     ports:
       - "5001:5001"
     networks:
@@ -82,7 +82,7 @@ services:
     working_dir: /app
     volumes:
       - ./services/validation-gateway:/app
-    command: sh -c "pip install flask && python app.py"
+    command: sh -c "pip install flask flask-cors && python app.py"
     ports:
       - "5002:5002"
     networks:
@@ -94,7 +94,7 @@ services:
     working_dir: /app
     volumes:
       - ./services/llm-service:/app
-    command: sh -c "pip install flask && python app.py"
+    command: sh -c "pip install flask flask-cors && python app.py"
     ports:
       - "5003:5003"
     networks:
