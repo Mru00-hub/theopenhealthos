@@ -217,7 +217,17 @@ app.post('/api/v1/kernel/scheduler', (req, res) => {
 });
 
 // 12. HAL NETWORK SIMULATION
-app.post('/api/v1/hal/network', (req, res) => res.json({ status: 'ok' }));
+app.post('/api/v1/hal/network', async (req, res) => {
+    try {
+        console.log(`[Kernel] Toggling HAL Network State: ${req.body.status}`);
+        // Forward the toggle command to the Device Gateway
+        const response = await axios.post(`${SERVICES.device}/hal/network/toggle`, req.body);
+        res.json(response.data);
+    } catch (error) {
+        console.error('HAL Toggle Failed:', error.message);
+        res.status(500).json({ error: 'Failed to reach Device Gateway' });
+    }
+});
 
 // 13. SYSTEM HEALTH CHECK
 app.get('/health/system', async (req, res) => {
