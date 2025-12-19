@@ -252,17 +252,25 @@ const MicroservicesSimulator = () => {
   // --- 7. AGENTIC AI WORKFLOW ---
   const runAgenticWorkflow = async () => {
     if (!isSystemHealthy) return;
-    addMessage('agent', '🤖 Agentic Orchestrator: Multi-step clinical workflow initiated');
-    addMessage('agent', 'Step 1: Gathering context from HPS (FHIR/DICOM/HL7)...');
-    await delay(800);
-    addMessage('agent', 'Step 2: Risk assessment via Distributed ML Registry...');
-    await delay(600);
-    addMessage('agent', 'Step 3: GenAI reasoning for autonomous care plan...');
-    await delay(700);
-    addMessage('cdss', 'Step 4: CDSS executing recommendations', 'success');
-    addMessage('agent', '✓ Autonomous workflow complete: CDR updated', 'success');
-  };
+    addMessage('agent', '🤖 Agentic Orchestrator: Initiating Autonomous Protocol...');
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/agent/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+        
+        // Log the real steps performed by the backend
+        data.logs.forEach((log, index) => {
+            setTimeout(() => addMessage('agent', `Step ${index + 1}: ${log}`), index * 600);
+        });
 
+    } catch (e) {
+        addMessage('error', 'Agentic Workflow Failed to Execute');
+    }
+  };
+  
   // --- 8. HAL & KERNEL CONTROLS ---
   const toggleNetwork = async () => {
     const newStatus = !halStatus.online;
