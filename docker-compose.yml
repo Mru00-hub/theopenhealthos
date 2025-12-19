@@ -62,7 +62,7 @@ services:
       - llm-service         # Added for cleaner logs
     
     # The Mandatory Change: Installing requests
-    command: sh -c "pip install flask requests && python app.py"
+    command: sh -c "pip install flask flask-cors requests && python app.py"
 
   model-registry:
     image: python:3.9-slim
