@@ -5,7 +5,10 @@ import random
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-logging.basicConfig(level=logging.INFO format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger('hos-ml-orchestrator')
 
 app = Flask(__name__)
