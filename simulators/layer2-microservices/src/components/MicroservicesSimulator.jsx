@@ -22,6 +22,8 @@ const MicroservicesSimulator = () => {
   const [modelRegistry, setModelRegistry] = useState([]);
   const [selectedModel, setSelectedModel] = useState('sepsis-detector');
   const [deviceStreamData, setDeviceStreamData] = useState(null); 
+  const [driverStats, setDriverStats] = useState(null); // Stores Legacy/Optical value
+  const [aiAnalysis, setAiAnalysis] = useState(null); // Stores Drift/SHAP data
 
   // Helper for delays
   const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -88,6 +90,10 @@ const MicroservicesSimulator = () => {
   const simulatePatientAdmission = async () => {
     if (!activeServices.fhir) return addMessage('error', 'FHIR service unreachable', 'error');
     
+    // Clear previous data
+    setPatientData(null);
+    setAiAnalysis(null);
+
     setSecurityStatus('checking');
     addMessage('security', 'Requesting JWT authorization from Security Service...');
     
@@ -96,22 +102,22 @@ const MicroservicesSimulator = () => {
       setSecurityStatus('approved');
       addMessage('security', '✓ Access Granted (Token Issued)', 'success');
 
-      // Randomize to test Drift Logic
+      // Randomize to test Drift Logic (20% chance of "Old Age" drift)
       const isDriftTest = Math.random() > 0.8;
       const simAge = isDriftTest ? 95 : 65;
       const simBP = isDriftTest ? '185/110' : '145/92';
 
-      addMessage('api-gateway', 'POST /api/v1/patients (Writing to HPS Stack)...');
+      // 1. Create Patient
       const response = await fetch(`${API_BASE_URL}/api/v1/patients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: [{ family: "Doe", given: ["John"] }], gender: "male", birthDate: isDriftTest ? "1930-01-01" : "1960-01-01" })
       });
       const newPatient = await response.json();
-      if (!newPatient || !newPatient.id) throw new Error("Invalid FHIR response (No ID)");
       setPatientData({ id: newPatient.id, name: 'John Doe', age: simAge, condition: 'Hypertension', vitals: { heartRate: 88, bloodPressure: simBP } });
       addMessage('fhir', `✓ Resource Created: Patient/${newPatient.id.substring(0,8)}...`, 'success');
 
+      // 2. Trigger AI Analysis
       if (activeServices.cdss) {
         addMessage('cdss', 'Invoking Integrated CDSS Evaluation...');
         const cdssRes = await fetch(`${API_BASE_URL}/api/v1/cdss/evaluate`, {
@@ -125,12 +131,13 @@ const MicroservicesSimulator = () => {
         });
         const advice = await cdssRes.json();
         
+        // SAVE FOR UI VISUALIZATION
+        setAiAnalysis(advice);
+
         if (advice.status === 'critical') {
             addMessage('ml', `🤖 AI Alert: Model detected Data Drift!`, 'warning');
-            addMessage('cdss', `🛑 Risk Mitigation: ${advice.recommendation}`, 'error');
         } else {
-            addMessage('ml', `🤖 AI Inference (${advice.source.ml_model}): ${advice.recommendation}`, 'success');
-            advice.explainability.contributors.forEach(c => addMessage('ml', `   • XAI: ${c.feature} impact ${c.impact} (${c.reason})`));
+            addMessage('ml', `🤖 AI Inference: ${advice.recommendation}`, 'success');
         }
       }
     } catch (error) { addMessage('error', `Workflow Failed: ${error.message}`, 'error'); }
@@ -163,7 +170,12 @@ const MicroservicesSimulator = () => {
         } 
         // 3. Handle Database Sync Events (The "Flush")
         else if (data.type === 'db_sync_event') {
-             addMessage('fhir', '✓ Edge Buffer Flushed to CDR', 'success');
+             if (halStatus.buffer > 0) {
+                 addMessage('fhir', `✓ RECOVERY: Flushed ${halStatus.buffer} Buffered Records to CDR`, 'success');
+             } else {
+                 // Routine sync is silent or logged as info
+                 if (Math.random() > 0.8) addMessage('device', 'ℹ Routine Edge Sync (Batch Optimized)', 'info');
+             }
         }
     };
 
@@ -172,6 +184,7 @@ const MicroservicesSimulator = () => {
         socket.close();
         addMessage('device', 'Stream Session Ended.');
         setDeviceStreamData(null);
+        setDriverStats(null);
     }, 30000); 
 
     // Phase 2 & 3: Run REST Drivers immediately (Concurrency Test)
@@ -182,42 +195,23 @@ const MicroservicesSimulator = () => {
   // Helper function for REST Drivers (Kept from your original code)
   const runRestDrivers = async () => {
         await delay(1000); // Wait a second so logs don't clutter immediately
-        let opticalSuccess = false;
-        let legacySuccess = false;
-        
-        addMessage('device', 'Phase 2: Raw Sensor Physics (Optical)...');
         try {
+            // Optical Driver
             const res1 = await fetch(`${API_BASE_URL}/api/v1/devices/optical`, { method: 'POST' });
             const data1 = await res1.json();
             
-            // Validation Logic
-            if (data1.raw_input) {
-              addMessage('device', `Input: R=${data1.raw_input.red.toFixed(2)}v / IR=${data1.raw_input.ir.toFixed(2)}v`);
-              addMessage('device', `→ Math: Beer-Lambert Law Calculation`);
-            } else {
-               // Fallback for safety
-               addMessage('device', `Input: R=0.85v / IR=2.15v`); 
-            }
-            addMessage('device', `→ Output: SpO2 ${data1.abstracted_value}% (Standardized)`);
-            opticalSuccess = true;
-        } catch(e) { addMessage('error', `Optical Driver Fail: ${e.message}`); }
-
-        await delay(1500);
-
-        addMessage('device', 'Phase 3: Legacy Equipment (Serial/Text)...');
-        try {
+            // Legacy Driver
             const res2 = await fetch(`${API_BASE_URL}/api/v1/devices/legacy`, { method: 'POST' });
             const data2 = await res2.json();
             
-            addMessage('device', `Input: "${data2.raw_input}"`);
-            addMessage('device', `→ Parser: Regex Extraction`);
-            addMessage('device', `→ Output: HR ${data2.abstracted_value} bpm (Standardized)`);
-            legacySuccess = true;
-        } catch(e) { addMessage('error', `Legacy Driver Fail: ${e.message}`); }
+            // SAVE FOR UI CONTEXT PANEL
+            setDriverStats({
+                optical: `${data1.abstracted_value}%`,
+                legacy: `${data2.abstracted_value} bpm`
+            });
 
-        if (opticalSuccess && legacySuccess) {
-            addMessage('system', '✓ ALL DEVICE TESTS PASSED: Universal Abstraction Proven', 'success');
-        }
+            addMessage('device', `✓ Drivers Verified: Optical (${data1.abstracted_value}%) & Legacy (${data2.abstracted_value})`);
+        } catch(e) { addMessage('error', `Driver Validation Failed`); }
   };
 
   const fetchRegistry = () => {
@@ -240,25 +234,21 @@ const MicroservicesSimulator = () => {
         });
         const data = await res.json();
         
-        // 1. TRAINING STEP
         if (data.validation_report && data.validation_report.model_id) {
-             addMessage('ml', `✓ Training Complete: ${data.validation_report.model_id} (GPU Cluster)`, 'success');
-        } else {
-             throw new Error("Invalid ML Response");
+             addMessage('ml', `✓ Training Complete: ${data.validation_report.model_id}`, 'success');
         }
 
-        // 2. VALIDATION STEP (The "Safety Gate")
         if (data.validation_report.approved) {
-             // Fix NaN% by using a default if missing
-             const acc = data.validation_report.accuracy ? (data.validation_report.accuracy * 100).toFixed(1) : "92.4";
+             // Use the REAL random accuracy from backend
+             const acc = (data.validation_report.accuracy * 100).toFixed(1);
              addMessage('validation', `✓ Safety Gate PASSED (Accuracy: ${acc}%)`, 'success');
              
              if (data.status === 'promoted_to_production') {
-                 addMessage('registry', `✓ Model Promoted to Production Registry`);
-                 setTimeout(fetchRegistry, 1000); // <--- FIX: Auto-refresh Registry List
+                 addMessage('registry', `✓ New Version Promoted to Production`);
+                 setTimeout(fetchRegistry, 1000);
              }
         } else {
-             addMessage('validation', `X Safety Gate REJECTED.`, 'error');
+             addMessage('validation', `X Safety Gate REJECTED (Accuracy too low or Bias detected).`, 'error');
         }
     } catch (e) { addMessage('error', 'Pipeline Failed'); }
   };
@@ -473,81 +463,140 @@ const MicroservicesSimulator = () => {
             </div>
           </div>
 
-          {/* UNIFIED CONTEXT PANEL */}
+          {/* UNIFIED CONTEXT PANEL (Patient + AI + FHIR + IoMT) */}
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-4 flex flex-col h-full relative overflow-hidden">
             
-            {/* TOP ROW: PATIENT INFO + ABSTRACTED DRIVER DATA */}
-            <div className="flex justify-between items-start border-b border-slate-700 pb-2 mb-2">
+            {/* TOP HEADER: Patient & Abstracted Drivers */}
+            <div className="flex justify-between items-end border-b border-slate-700 pb-2 mb-2">
                 <div>
                     <h3 className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-2">
                         <Shield size={14}/> LIVE PATIENT CONTEXT
                     </h3>
                     {patientData ? (
-                        <div className="mt-1">
+                        <div className="mt-1 leading-tight">
                             <div className="text-sm font-bold text-white">{patientData.name}</div>
-                            <div className="text-[10px] text-slate-400">ID: {patientData.id?.substring(0,8)}...</div>
+                            <div className="text-[9px] text-slate-500">ID: {patientData.id?.substring(0,8)}...</div>
                         </div>
                     ) : <span className="text-[9px] italic text-slate-600">No Admission</span>}
                 </div>
-
-                {/* ABSTRACTED VALUES DISPLAY */}
+                
+                {/* Abstracted Values (Right Side) */}
                 <div className="text-right">
-                    <h3 className="text-[9px] font-bold text-slate-500 uppercase">Abstracted Drivers</h3>
-                    {deviceStreamData ? (
-                        <div className="flex flex-col items-end">
-                            <span className="text-[10px] text-blue-400 font-mono">HR: {deviceStreamData.vitals.hr} bpm</span>
-                            <span className="text-[10px] text-emerald-400 font-mono">SpO2: {deviceStreamData.vitals.spo2}%</span>
+                    <h3 className="text-[8px] font-bold text-slate-500 uppercase">Abstracted Drivers</h3>
+                    {driverStats ? (
+                        <div className="flex flex-col items-end leading-tight">
+                            <div className="flex items-center gap-1">
+                                <span className="text-[8px] text-slate-500">LEGACY:</span>
+                                <span className="text-[9px] text-blue-400 font-mono">{driverStats.legacy}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span className="text-[8px] text-slate-500">OPTICAL:</span>
+                                <span className="text-[9px] text-emerald-400 font-mono">{driverStats.optical}</span>
+                            </div>
                         </div>
                     ) : <span className="text-[9px] text-slate-600">--</span>}
                 </div>
             </div>
 
-            <div className="flex-1 grid grid-cols-2 gap-2">
+            <div className="flex-1 grid grid-cols-2 gap-2 min-h-0">
                 
-                {/* LEFT COL: RAW FHIR (Restored) */}
-                <div className="bg-black p-2 rounded border border-slate-700 font-mono text-[9px] text-green-500 overflow-y-auto relative">
-                    <div className="absolute top-1 right-2 text-slate-600 font-bold select-none">FHIR R4</div>
-                    {patientData ? (
-                        <>
-                            <div>{`{`}</div>
-                            <div className="pl-2">"resourceType": "Patient",</div>
-                            <div className="pl-2">"id": "{patientData.id?.substring(0,8)}",</div>
-                            <div className="pl-2">"active": true,</div>
-                            {/* Show Agentic CarePlan if it exists */}
-                            {patientData.carePlan && (
-                                <>
-                                  <div className="pl-2 text-pink-400">"carePlan": {`{`}</div>
-                                  <div className="pl-4 text-pink-400">"status": "active",</div>
-                                  <div className="pl-4 text-pink-400">"risk": {patientData.carePlan.risk_score}%</div>
-                                  <div className="pl-2 text-pink-400">{`},`}</div>
-                                </>
+                {/* LEFT COL: AI INSIGHTS + FHIR */}
+                <div className="flex flex-col gap-2 h-full overflow-hidden">
+                    
+                    {/* 1. AI REASONING CARD (New!) */}
+                    <div className={`p-2 rounded border ${
+                        !aiAnalysis ? 'border-slate-700 bg-slate-900/50' :
+                        aiAnalysis.status === 'critical' ? 'border-red-500/50 bg-red-900/20' : 
+                        'border-indigo-500/30 bg-indigo-900/10'
+                    } transition-all`}>
+                        <div className="flex justify-between items-center mb-1">
+                            <span className="text-[8px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                                <Cpu size={10}/> AI Reasoning
+                            </span>
+                            {aiAnalysis && (
+                                <span className={`text-[8px] px-1 rounded ${
+                                    aiAnalysis.status === 'critical' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
+                                }`}>{aiAnalysis.status === 'critical' ? 'DRIFT ALERT' : 'CONFIDENT'}</span>
                             )}
-                            <div>{`}`}</div>
-                        </>
-                    ) : <div className="text-slate-700 mt-4 text-center">Waiting for Admission...</div>}
+                        </div>
+                        
+                        {aiAnalysis ? (
+                            <div className="text-[9px]">
+                                {aiAnalysis.status === 'critical' ? (
+                                    <div className="text-red-300 font-bold">
+                                        ⚠ {aiAnalysis.recommendation}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="text-indigo-200 mb-1 leading-tight">{aiAnalysis.recommendation}</div>
+                                        {/* SHAP Values Visualizer */}
+                                        <div className="space-y-1 mt-2">
+                                            {aiAnalysis.explainability?.contributors?.map((c, i) => (
+                                                <div key={i} className="flex justify-between items-center opacity-80">
+                                                    <span className="text-slate-400">{c.feature}</span>
+                                                    <div className="flex items-center gap-1">
+                                                        <div className="w-12 h-1 bg-slate-700 rounded overflow-hidden">
+                                                            <div className="h-full bg-indigo-400" style={{width: c.impact.replace('+','').replace('%','') + '%'}}></div>
+                                                        </div>
+                                                        <span className="text-indigo-300 font-mono">{c.impact}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        ) : <div className="text-[8px] text-slate-600 italic text-center py-2">Waiting for CDSS...</div>}
+                    </div>
+
+                    {/* 2. RAW FHIR VIEWER (Mini) */}
+                    <div className="bg-black p-2 rounded border border-slate-700 font-mono text-[8px] text-green-500 overflow-y-auto flex-1 shadow-inner leading-tight">
+                        <div className="sticky top-0 bg-black/80 backdrop-blur w-full text-slate-700 font-bold select-none mb-1">FHIR R4 JSON</div>
+                        {patientData ? (
+                            <div className="whitespace-pre-wrap break-all opacity-80">
+                                <span className="text-yellow-600">{"{"}</span>
+                                <div className="pl-1"><span className="text-purple-400">"resourceType"</span>: "Patient",</div>
+                                <div className="pl-1"><span className="text-purple-400">"id"</span>: "{patientData.id?.substring(0,6)}..",</div>
+                                
+                                {/* DYNAMIC AGENTIC CAREPLAN */}
+                                {patientData.carePlan && (
+                                    <div className="mt-1 border-l border-pink-500/30 pl-1">
+                                      <span className="text-pink-400">"carePlan"</span>: <span className="text-yellow-600">{"{"}</span>
+                                      <div className="pl-1 text-slate-400">"status": "active",</div>
+                                      <div className="pl-1 text-slate-400">"risk": {patientData.carePlan.risk_score}%,</div>
+                                      <span className="text-yellow-600">{"},"}</span>
+                                    </div>
+                                )}
+                                <span className="text-yellow-600">{"}"}</span>
+                            </div>
+                        ) : <div className="text-slate-700 text-center mt-2">--</div>}
+                    </div>
                 </div>
 
-                {/* RIGHT COL: LIVE IOMT VISUALIZER */}
-                <div className="bg-black p-2 rounded border border-slate-700 relative flex flex-col justify-center items-center">
+                {/* RIGHT COL: LIVE IOMT GRAPH */}
+                <div className="bg-black p-2 rounded border border-slate-700 relative flex flex-col justify-center items-center shadow-inner overflow-hidden">
                      {deviceStreamData ? (
                         <>
                             <div className="absolute top-2 right-2 flex items-center gap-1">
-                                <div className={`w-1.5 h-1.5 rounded-full ${halStatus.online ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                <span className="text-[8px] text-slate-500">{halStatus.online ? 'LIVE' : 'BUFFER'}</span>
+                                <div className={`w-1.5 h-1.5 rounded-full ${halStatus.online ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                                <span className="text-[8px] text-slate-500 font-bold">{halStatus.online ? 'LIVE' : 'BUFFER'}</span>
                             </div>
-                            <div className="text-2xl font-black text-white">{deviceStreamData.vitals.hr}</div>
-                            <div className="text-[8px] text-slate-500 uppercase mb-1">Heart Rate</div>
-                            {/* Waveform */}
-                            <div className="h-6 flex items-end gap-[1px] w-full px-2 justify-center">
-                                {[...Array(15)].map((_,i) => (
-                                    <div key={i} className="w-1 bg-blue-500" style={{height: `${Math.random() * 100}%`}}></div>
+                            
+                            <div className="text-3xl font-black text-white tracking-tighter">{deviceStreamData.vitals.hr}</div>
+                            <div className="text-[8px] text-slate-500 uppercase tracking-widest mb-2">Heart Rate</div>
+                            
+                            {/* CSS Waveform Animation */}
+                            <div className="h-8 flex items-end gap-[2px] w-full px-2 justify-center opacity-80">
+                                {[...Array(12)].map((_,i) => (
+                                    <div key={i} className="w-1.5 bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-sm transition-all duration-75" 
+                                         style={{height: `${Math.random() * 100}%`}}></div>
                                 ))}
                             </div>
                         </>
                     ) : (
-                        <div className="text-slate-700 text-[9px] italic flex flex-col items-center">
-                             <Wifi size={16} className="mb-1 opacity-20"/>
-                             <span>Offline</span>
+                        <div className="text-slate-700 text-[9px] italic flex flex-col items-center gap-2">
+                             <Wifi size={20} className="opacity-20"/>
+                             <span>No Signal</span>
                         </div>
                     )}
                 </div>
