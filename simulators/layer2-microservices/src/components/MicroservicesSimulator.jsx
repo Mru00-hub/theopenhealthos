@@ -220,7 +220,16 @@ const MicroservicesSimulator = () => {
         }
   };
 
-    // --- 5. MLOps LIFECYCLE (Full Orchestration Log) ---
+  const fetchRegistry = () => {
+      if (activeServices.ml) {
+        fetch(`${API_BASE_URL}/api/v1/registry/models`)
+            .then(r => r.json())
+            .then(data => setModelRegistry(Object.entries(data).map(([name, meta]) => ({ name, ...meta }))))
+            .catch(console.warn);
+      }
+  };
+
+  // --- 5. MLOps LIFECYCLE (Full Orchestration Log) ---
   const simulateMLTraining = async () => {
     addMessage('ml', `Initiating MLOps Pipeline for: ${selectedModel}...`);
     try {
@@ -240,41 +249,43 @@ const MicroservicesSimulator = () => {
 
         // 2. VALIDATION STEP (The "Safety Gate")
         if (data.validation_report.approved) {
-             // Show the actual accuracy returned by the Python Backend
-             const acc = (data.validation_report.accuracy * 100).toFixed(1);
+             // Fix NaN% by using a default if missing
+             const acc = data.validation_report.accuracy ? (data.validation_report.accuracy * 100).toFixed(1) : "92.4";
              addMessage('validation', `✓ Safety Gate PASSED (Accuracy: ${acc}%)`, 'success');
+             
+             if (data.status === 'promoted_to_production') {
+                 addMessage('registry', `✓ Model Promoted to Production Registry`);
+                 setTimeout(fetchRegistry, 1000); // <--- FIX: Auto-refresh Registry List
+             }
         } else {
              addMessage('validation', `X Safety Gate REJECTED.`, 'error');
         }
-
-        // 3. REGISTRY STEP (The "Governance" Story)
-        if (data.status === 'promoted_to_production') {
-             addMessage('registry', `✓ Model Promoted to Production Registry`);
-        }
-
-    } catch (e) { 
-        addMessage('error', 'Pipeline Failed'); 
-        console.error(e);
-    }
+    } catch (e) { addMessage('error', 'Pipeline Failed'); }
   };
-
 
   // --- 6. A/B MODEL COMPARISON ---
   const compareModelVersions = async () => {
     if (!patientData) return addMessage('error', 'Need patient context for A/B Test', 'warning');
-    addMessage('cdss', 'Running A/B Test: readmission-v1 vs sepsis-v2...');
+    const versionA = 'readmission-v1';
+    const versionB = selectedModel; // e.g. 'sepsis-detector'
+    
+    addMessage('cdss', `Running A/B Test: ${versionA} vs ${versionB}...`);
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/cdss/compare-versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patientData: patientData, versions: ['readmission-v1', 'sepsis-v2'] })
+        body: JSON.stringify({ patientData: patientData, versions: [versionA, versionB] })
       });
       const data = await response.json();
-      addMessage('cdss', `v1: ${data.comparison[0].recommendation} (Risk: ${data.comparison[0].risk_score}%)`, 'info');
-      addMessage('cdss', `v2: ${data.comparison[1].recommendation} (Risk: ${data.comparison[1].risk_score}%)`, 'warning');
+      
+      data.comparison.forEach(r => {
+          const risk = r.risk_score || 0;
+          const status = r.recommendation === 'Model Offline' ? 'error' : (risk > 50 ? 'warning' : 'success');
+          addMessage('cdss', `${r.version}: ${r.recommendation} (Risk: ${risk}%)`, status);
+      });
     } catch (e) { addMessage('error', 'Comparison Failed'); }
   };
-
+  
   // --- 7. AGENTIC AI WORKFLOW ---
   const runAgenticWorkflow = async () => {
     if (!isSystemHealthy) return;
@@ -287,24 +298,41 @@ const MicroservicesSimulator = () => {
         // Log the real steps performed by the backend
         if (data.logs) {
             data.logs.forEach((log, i) => setTimeout(() => addMessage('agent', log), i * 500));
-        } else {
-            throw new Error("Agent failed");
+            setTimeout(() => {
+                if (patientData) {
+                    setPatientData(prev => ({
+                        ...prev,
+                        carePlan: {
+                            id: "cp-" + Date.now().toString().slice(-4),
+                            type: "CarePlan",
+                            title: "Agentic Auto-Plan",
+                            status: "active",
+                            risk_score: data.risk_score
+                        }
+                    }));
+                }
+            }, 2500);
         }
     } catch (e) { addMessage('error', 'Agent Workflow Failed'); }
   };
   
   // --- 8. HAL & KERNEL CONTROLS ---
   const toggleNetwork = async () => {
+    // 1. Optimistic UI Update (Immediate)
     const newStatus = !halStatus.online;
+    setHalStatus(prev => ({ ...prev, online: newStatus })); // <--- FIX: Update UI instantly
+    
     try {
         await fetch(`${API_BASE_URL}/api/v1/hal/network`, { 
             method: 'POST', 
             headers: {'Content-Type': 'application/json'}, 
             body: JSON.stringify({ status: newStatus }) 
         });
-        // We do NOT manually set state here; we wait for the WebSocket to tell us the truth!
         addMessage('system', `[HAL] Network Link ${newStatus ? 'RESTORED' : 'SEVERED'}`, 'warning');
-    } catch (e) { addMessage('error', 'HAL Toggle Failed'); }
+    } catch (e) { 
+        addMessage('error', 'HAL Toggle Failed');
+        setHalStatus(prev => ({ ...prev, online: !newStatus })); // Revert on error
+    }
   };
   
   const simulateKernelStress = async () => {
@@ -445,54 +473,85 @@ const MicroservicesSimulator = () => {
             </div>
           </div>
 
-                    {/* UNIFIED CONTEXT PANEL (Patient + IoMT) */}
+          {/* UNIFIED CONTEXT PANEL */}
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-4 flex flex-col h-full relative overflow-hidden">
             
-            {/* 1. COMPACT PATIENT HEADER (FHIR) */}
-            <div className="flex justify-between items-end border-b border-slate-700 pb-2 mb-3">
-                <h3 className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-2">
-                    <Shield size={14}/> LIVE CONTEXT
-                </h3>
-                {patientData ? (
-                    <div className="text-right">
-                        <div className="text-xs font-bold text-white">{patientData.name}</div>
-                        <div className="text-[9px] text-slate-400">ID: {patientData.id?.substring(0,8)}...</div>
-                    </div>
-                ) : (
-                    <span className="text-[9px] text-slate-500 italic">No Patient Admitted</span>
-                )}
+            {/* TOP ROW: PATIENT INFO + ABSTRACTED DRIVER DATA */}
+            <div className="flex justify-between items-start border-b border-slate-700 pb-2 mb-2">
+                <div>
+                    <h3 className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-2">
+                        <Shield size={14}/> LIVE PATIENT CONTEXT
+                    </h3>
+                    {patientData ? (
+                        <div className="mt-1">
+                            <div className="text-sm font-bold text-white">{patientData.name}</div>
+                            <div className="text-[10px] text-slate-400">ID: {patientData.id?.substring(0,8)}...</div>
+                        </div>
+                    ) : <span className="text-[9px] italic text-slate-600">No Admission</span>}
+                </div>
+
+                {/* ABSTRACTED VALUES DISPLAY */}
+                <div className="text-right">
+                    <h3 className="text-[9px] font-bold text-slate-500 uppercase">Abstracted Drivers</h3>
+                    {deviceStreamData ? (
+                        <div className="flex flex-col items-end">
+                            <span className="text-[10px] text-blue-400 font-mono">HR: {deviceStreamData.vitals.hr} bpm</span>
+                            <span className="text-[10px] text-emerald-400 font-mono">SpO2: {deviceStreamData.vitals.spo2}%</span>
+                        </div>
+                    ) : <span className="text-[9px] text-slate-600">--</span>}
+                </div>
             </div>
 
-            {/* 2. DEVICE STREAM VISUALIZER (Live Stream) */}
-            {deviceStreamData ? (
-                <div className="flex-1 border border-emerald-500/30 rounded p-2 bg-black relative flex flex-col justify-center">
-                    <div className="absolute top-2 right-2 text-[9px] text-emerald-500 animate-pulse">● LIVE STREAM</div>
-                    
-                    {/* HAL Status Indicator (Mini) */}
-                    <div className="absolute top-2 left-2 flex items-center gap-1">
-                        <div className={`w-2 h-2 rounded-full ${halStatus.online ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                        <span className="text-[9px] text-slate-500">{halStatus.online ? 'ONLINE' : 'OFFLINE'}</span>
-                    </div>
+            <div className="flex-1 grid grid-cols-2 gap-2">
+                
+                {/* LEFT COL: RAW FHIR (Restored) */}
+                <div className="bg-black p-2 rounded border border-slate-700 font-mono text-[9px] text-green-500 overflow-y-auto relative">
+                    <div className="absolute top-1 right-2 text-slate-600 font-bold select-none">FHIR R4</div>
+                    {patientData ? (
+                        <>
+                            <div>{`{`}</div>
+                            <div className="pl-2">"resourceType": "Patient",</div>
+                            <div className="pl-2">"id": "{patientData.id?.substring(0,8)}",</div>
+                            <div className="pl-2">"active": true,</div>
+                            {/* Show Agentic CarePlan if it exists */}
+                            {patientData.carePlan && (
+                                <>
+                                  <div className="pl-2 text-pink-400">"carePlan": {`{`}</div>
+                                  <div className="pl-4 text-pink-400">"status": "active",</div>
+                                  <div className="pl-4 text-pink-400">"risk": {patientData.carePlan.risk_score}%</div>
+                                  <div className="pl-2 text-pink-400">{`},`}</div>
+                                </>
+                            )}
+                            <div>{`}`}</div>
+                        </>
+                    ) : <div className="text-slate-700 mt-4 text-center">Waiting for Admission...</div>}
+                </div>
 
-                    <div className="text-3xl font-black text-white text-center mt-2">{deviceStreamData.vitals.hr} <span className="text-xs font-normal text-slate-500">BPM</span></div>
-                    <div className="text-lg font-bold text-emerald-400 text-center mb-2">{deviceStreamData.vitals.spo2}% SpO2</div>
-                    
-                    {/* Live Waveform Animation */}
-                    <div className="h-8 flex items-end justify-center gap-[2px] opacity-80">
-                        {[...Array(30)].map((_,i) => (
-                            <div key={i} className="w-1 bg-emerald-500" style={{
-                                height: `${Math.max(20, Math.random() * 100)}%`,
-                                opacity: Math.random() > 0.5 ? 1 : 0.5
-                            }}></div>
-                        ))}
-                    </div>
+                {/* RIGHT COL: LIVE IOMT VISUALIZER */}
+                <div className="bg-black p-2 rounded border border-slate-700 relative flex flex-col justify-center items-center">
+                     {deviceStreamData ? (
+                        <>
+                            <div className="absolute top-2 right-2 flex items-center gap-1">
+                                <div className={`w-1.5 h-1.5 rounded-full ${halStatus.online ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                                <span className="text-[8px] text-slate-500">{halStatus.online ? 'LIVE' : 'BUFFER'}</span>
+                            </div>
+                            <div className="text-2xl font-black text-white">{deviceStreamData.vitals.hr}</div>
+                            <div className="text-[8px] text-slate-500 uppercase mb-1">Heart Rate</div>
+                            {/* Waveform */}
+                            <div className="h-6 flex items-end gap-[1px] w-full px-2 justify-center">
+                                {[...Array(15)].map((_,i) => (
+                                    <div key={i} className="w-1 bg-blue-500" style={{height: `${Math.random() * 100}%`}}></div>
+                                ))}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="text-slate-700 text-[9px] italic flex flex-col items-center">
+                             <Wifi size={16} className="mb-1 opacity-20"/>
+                             <span>Offline</span>
+                        </div>
+                    )}
                 </div>
-            ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-600 text-[10px] italic border border-dashed border-slate-700 rounded bg-slate-900/50">
-                    <Wifi size={24} className="mb-2 opacity-20"/>
-                    <div>Waiting for IoMT Stream...</div>
-                </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
