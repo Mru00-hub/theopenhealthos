@@ -1,0 +1,16 @@
+{
+  "name": "@theopenhealthos/context-awareness",
+  "version": "1.0.0",
+  "description": "The Crown Jewel: Generates Real-time Clinical Context",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "lodash": "^4.17.21",
+    "moment": "^2.29.4"
+  }
+}
