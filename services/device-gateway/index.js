@@ -126,14 +126,14 @@ wss.on('connection', (ws) => {
     const interval = setInterval(async () => {
         tickCount++;
         
-        // Generate Physics
+        // Physics Generation
         const red = 0.8 + (Math.random() * 0.05);
         const ir = 2.0 + (Math.random() * 0.05);
         const spo2 = calculateSpO2(red, ir);
         const hr = 70 + Math.floor(Math.random() * 5);
         const isCritical = spo2 < 85;
 
-        // 1. ALWAYS send Live Visualization (Local Device Display)
+        // 1. Always send Live Viz
         ws.send(JSON.stringify({
             type: 'stream_frame',
             timestamp: Date.now(),
@@ -141,40 +141,46 @@ wss.on('connection', (ws) => {
             hal: { network: isNetworkUp, bufferSize: edgeBuffer.length }
         }));
 
-        // 2. INTELLIGENT SYNC LOGIC (Every 2 seconds)
-        if (tickCount % 10 === 0 || isCritical) { 
-            
+        // 2. SMART SYNC DECISION ENGINE
+        // Sync if: (Time is up) OR (Critical) OR (We have a buffer to flush & Net is Up)
+        const shouldSync = (tickCount % 10 === 0) || isCritical || (isNetworkUp && edgeBuffer.length > 0);
+
+        if (shouldSync) { 
             if (!isNetworkUp) {
-                // A. NETWORK DOWN -> BUFFER
-                edgeBuffer.push({ type: "Oxygen Saturation", value: spo2, unit: "%" });
-                ws.send(JSON.stringify({ type: 'hal_event', status: 'buffered_in_ram' }));
+                // NETWORK DOWN -> BUFFER
+                // Only buffer if it's the "scheduled" time (prevent buffer spamming 5x/sec)
+                if (tickCount % 10 === 0 || isCritical) {
+                    edgeBuffer.push({ type: "Oxygen Saturation", value: spo2, unit: "%" });
+                    ws.send(JSON.stringify({ type: 'hal_event', status: 'buffered_in_ram' }));
+                }
             } else {
-                // B. NETWORK UP -> SYNC
-                
-                // First, check if we need to FLUSH a previous outage buffer
+                // NETWORK UP -> SYNC
                 let flushedCount = 0;
+                let syncType = "routine";
+
+                // Check for Flush
                 if (edgeBuffer.length > 0) {
                     console.log(`[Kernel] Flushing ${edgeBuffer.length} records...`);
                     flushedCount = edgeBuffer.length;
-                    edgeBuffer = []; // CLEAR THE BUFFER (The Flush)
+                    edgeBuffer = []; // CLEAR BUFFER
+                    syncType = "recovery";
                 }
 
-                // Sync the current live value
+                // Persist to FHIR
                 const saved = await publishToFHIR("Oxygen Saturation", spo2, "%", "59408-5");
                 
                 if (saved) {
                     ws.send(JSON.stringify({ 
                         type: 'db_sync_event', 
                         status: 'saved_to_fhir',
-                        flushed: flushedCount // Tell frontend how many we recovered
+                        flushed: flushedCount,
+                        syncType: syncType
                     }));
                 }
             }
         } 
-        // 3. NO-OP LOGIC (Traffic Reduction Demo)
+        // 3. Traffic Optimization (Only runs if we didn't just sync)
         else {
-             // Only log "Skipping" if the network is actually UP.
-             // If network is DOWN, silence is better so the "Buffering" messages stand out.
              if (isNetworkUp && Math.random() > 0.90) {
                  ws.send(JSON.stringify({ type: 'traffic_event', msg: 'Skipping FHIR Sync (Bandwidth Opt.)' }));
              }
