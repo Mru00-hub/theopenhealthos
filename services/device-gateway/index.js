@@ -116,7 +116,7 @@ app.post('/hal/network/toggle', (req, res) => {
     res.json({ status: isNetworkUp ? 'online' : 'offline', bufferSize: edgeBuffer.length });
 });
 
-// --- 5. DRIVER: WEBSOCKET STREAM (Smart Edge Restored!) ---
+// --- 5. DRIVER: WEBSOCKET STREAM (Smart Edge Logic) ---
 wss.on('connection', (ws) => {
     console.log('[Device Gateway] IoMT Stream Connected');
     ensurePatientExists("1001");
@@ -131,26 +131,39 @@ wss.on('connection', (ws) => {
         const hr = 70 + Math.floor(Math.random() * 5);
         const isCritical = spo2 < 85;
 
-        // Send Real-Time Data to UI
+        // 1. ALWAYS send Live Visualization (Local Device Display)
         ws.send(JSON.stringify({
             type: 'stream_frame',
             timestamp: Date.now(),
-            raw_physics: { red: red.toFixed(3), ir: ir.toFixed(3) },
             vitals: { spo2, hr },
             hal: { network: isNetworkUp, bufferSize: edgeBuffer.length }
         }));
 
-        // SMART EDGE LOGIC: Save to DB periodically OR if Critical
-        // We restore this but use publishToFHIR which now has safety checks
-        if (tickCount % 25 === 0 || isCritical) { 
-            const saved = await publishToFHIR("Oxygen Saturation", spo2, "%", "59408-5");
-            if (saved) {
-                ws.send(JSON.stringify({ type: 'db_sync_event', status: 'saved_to_fhir' }));
-            } else {
+        // 2. INTELLIGENT SYNC LOGIC
+        // We only try to sync every 10 ticks (2 seconds) OR if Critical
+        if (tickCount % 10 === 0 || isCritical) { 
+            
+            if (!isNetworkUp) {
+                // NETWORK DOWN: Buffer it
+                edgeBuffer.push({ type: "Oxygen Saturation", value: spo2, unit: "%" });
                 ws.send(JSON.stringify({ type: 'hal_event', status: 'buffered_in_ram' }));
+            } else {
+                // NETWORK UP: Sync it
+                const saved = await publishToFHIR("Oxygen Saturation", spo2, "%", "59408-5");
+                if (saved) {
+                    ws.send(JSON.stringify({ type: 'db_sync_event', status: 'saved_to_fhir' }));
+                }
             }
+        } 
+        // 3. NO-OP LOGIC (Traffic Reduction Demo)
+        else {
+             // Occasionally tell the frontend we are skipping to save bandwidth
+             if (Math.random() > 0.95) {
+                 ws.send(JSON.stringify({ type: 'traffic_event', msg: 'Skipping FHIR Sync (Bandwidth Opt.)' }));
+             }
         }
-    }, 200);
+
+    }, 200); // 5Hz
 
     ws.on('close', () => clearInterval(interval));
 });
