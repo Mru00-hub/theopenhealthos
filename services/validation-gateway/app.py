@@ -24,7 +24,7 @@ def validate_model():
     
     # 1. Safety Policy Rules
     # Randomly fail bias check to simulate real-world "Safety Stops"
-    bias_check_passed = random.choice([True, True, True, False]) 
+    bias_check_passed = random.choice([True, True, False, False]) 
     
     checks = {
         'min_accuracy': metrics.get('accuracy', 0) > 0.85,
