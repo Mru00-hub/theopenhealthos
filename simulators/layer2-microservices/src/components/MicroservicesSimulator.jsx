@@ -445,10 +445,10 @@ const MicroservicesSimulator = () => {
             </div>
           </div>
 
-          {/* UNIFIED CONTEXT PANEL (Patient + HAL + IoMT) */}
+                    {/* UNIFIED CONTEXT PANEL (Patient + IoMT) */}
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-4 flex flex-col h-full relative overflow-hidden">
             
-            {/* 1. COMPACT PATIENT HEADER */}
+            {/* 1. COMPACT PATIENT HEADER (FHIR) */}
             <div className="flex justify-between items-end border-b border-slate-700 pb-2 mb-3">
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-2">
                     <Shield size={14}/> LIVE CONTEXT
@@ -462,31 +462,22 @@ const MicroservicesSimulator = () => {
                     <span className="text-[9px] text-slate-500 italic">No Patient Admitted</span>
                 )}
             </div>
-            
-            {/* 2. HAL NETWORK CONTROLS */}
-            <div className={`mb-3 p-2 rounded border ${halStatus.online ? 'border-green-500/30 bg-green-900/10' : 'border-red-500/50 bg-red-900/20'}`}>
-                <div className="flex justify-between items-center mb-2">
-                    <span className="text-[9px] uppercase font-bold text-slate-400">Network Layer (HAL)</span>
-                    <span className={`text-[9px] px-2 rounded ${halStatus.online ? 'bg-green-600' : 'bg-red-600'}`}>{halStatus.online ? 'ONLINE' : 'SEVERED'}</span>
-                </div>
-                {!halStatus.online && (
-                    <div className="text-[10px] text-orange-400 font-mono animate-pulse text-center mb-1">
-                        ⚠ Buffering at Edge: {halStatus.buffer} records
-                    </div>
-                )}
-                <button onClick={toggleNetwork} className="w-full text-[9px] bg-slate-700 hover:bg-slate-600 py-1 rounded border border-slate-600 uppercase tracking-wider">
-                    {halStatus.online ? 'Sever Connection' : 'Restore Connection'}
-                </button>
-            </div>
 
-            {/* 3. DEVICE STREAM VISUALIZER */}
+            {/* 2. DEVICE STREAM VISUALIZER (Live Stream) */}
             {deviceStreamData ? (
                 <div className="flex-1 border border-emerald-500/30 rounded p-2 bg-black relative flex flex-col justify-center">
                     <div className="absolute top-2 right-2 text-[9px] text-emerald-500 animate-pulse">● LIVE STREAM</div>
-                    <div className="text-3xl font-black text-white text-center">{deviceStreamData.vitals.hr} <span className="text-xs font-normal text-slate-500">BPM</span></div>
+                    
+                    {/* HAL Status Indicator (Mini) */}
+                    <div className="absolute top-2 left-2 flex items-center gap-1">
+                        <div className={`w-2 h-2 rounded-full ${halStatus.online ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        <span className="text-[9px] text-slate-500">{halStatus.online ? 'ONLINE' : 'OFFLINE'}</span>
+                    </div>
+
+                    <div className="text-3xl font-black text-white text-center mt-2">{deviceStreamData.vitals.hr} <span className="text-xs font-normal text-slate-500">BPM</span></div>
                     <div className="text-lg font-bold text-emerald-400 text-center mb-2">{deviceStreamData.vitals.spo2}% SpO2</div>
                     
-                    {/* Fake Waveform Animation */}
+                    {/* Live Waveform Animation */}
                     <div className="h-8 flex items-end justify-center gap-[2px] opacity-80">
                         {[...Array(30)].map((_,i) => (
                             <div key={i} className="w-1 bg-emerald-500" style={{
@@ -500,7 +491,6 @@ const MicroservicesSimulator = () => {
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-600 text-[10px] italic border border-dashed border-slate-700 rounded bg-slate-900/50">
                     <Wifi size={24} className="mb-2 opacity-20"/>
                     <div>Waiting for IoMT Stream...</div>
-                    <div className="text-[9px] opacity-50">(Click IOMT Button)</div>
                 </div>
             )}
           </div>
