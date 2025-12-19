@@ -143,7 +143,7 @@ const MicroservicesSimulator = () => {
     } catch (error) { addMessage('error', `Workflow Failed: ${error.message}`, 'error'); }
   };
 
-  // --- 4. DEVICE STREAMING (Smart Edge + Driver Viz) ---
+  // --- 4. DEVICE STREAMING (Updated with JSON Updates) ---
   const simulateDeviceStream = async () => {
     if (!activeServices.device) return addMessage('error', 'Device Gateway Offline', 'error');
 
@@ -166,23 +166,31 @@ const MicroservicesSimulator = () => {
              setDeviceStreamData(data);
         } 
         
-        // 3. SMART EDGE LOGIC (Updated to use 'flushed' count)
+        // 3. SMART EDGE LOGIC (Now updates Patient JSON)
         else if (data.type === 'db_sync_event') {
              if (data.flushed > 0) {
-                 // The backend told us it just emptied the buffer
                  addMessage('fhir', `✓ RECOVERY: Flushed ${data.flushed} Buffered Records to CDR`, 'success');
              } else {
-                 // Normal sync
                  addMessage('fhir', '✓ Routine Edge Sync (Batch)', 'success');
              }
+
+             // UPDATE FHIR DISPLAY TO SHOW SYNC
+             setPatientData(prev => {
+                 if (!prev) return null;
+                 return {
+                     ...prev,
+                     lastBatch: {
+                         type: data.flushed > 0 ? "Recovery Flush" : "Routine Batch",
+                         records: data.flushed > 0 ? data.flushed : 1,
+                         timestamp: new Date().toLocaleTimeString()
+                     }
+                 };
+             });
         }
         
-        // 4. HAL Events (Network Down)
         else if (data.type === 'hal_event') {
              addMessage('warning', '⚠ Network Down. Buffering at Edge...', 'warning');
         }
-
-        // 5. Traffic Optimization
         else if (data.type === 'traffic_event') {
              addMessage('device', `ℹ ${data.msg}`, 'info');
         }
@@ -576,6 +584,16 @@ const MicroservicesSimulator = () => {
                                       <div className="pl-1 text-slate-400">"status": "active",</div>
                                       <div className="pl-1 text-slate-400">"risk": {patientData.carePlan.risk_score}%,</div>
                                       <span className="text-yellow-600">{"},"}</span>
+                                    </div>
+                                )}
+                              
+                                {/* SYNC STATUS (NEW) */}
+                                {patientData.lastBatch && (
+                                    <div className="mt-1 border-l border-blue-500/30 pl-1 animate-pulse">
+                                        <span className="text-blue-400">"latestSync"</span>: <span className="text-yellow-600">{"{"}</span>
+                                        <div className="pl-1 text-slate-400">"type": "{patientData.lastBatch.type}",</div>
+                                        <div className="pl-1 text-slate-400">"records": {patientData.lastBatch.records}</div>
+                                        <span className="text-yellow-600">{"}"}</span>
                                     </div>
                                 )}
                                 <span className="text-yellow-600">{"}"}</span>
