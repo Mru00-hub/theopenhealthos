@@ -65,6 +65,43 @@ app.get('/audit-trail', (req, res) => {
     res.json({ count: logs.length, events: logs });
 });
 
+/**
+ * POST /check-consent
+ * (REQUIRED BY FRONTEND SIMULATOR)
+ * Checks patient opt-in status using your Architecture Logic.
+ */
+app.post('/check-consent', (req, res) => {
+    const { patientId, studyId } = req.body;
+    
+    // 1. Log the attempt using your EXISTING auditor.js
+    logEvent({
+        actor: "RESEARCHER",
+        action: "R", // Read
+        resource: `Patient/${patientId}/Consent`,
+        outcome: "0",
+        desc: `Consent Check for Study: ${studyId}`
+    });
+
+    // 2. Perform Simulation Logic
+    // In a real DB, you'd look up the patient's Consent Resource.
+    // For Demo: Patient 1001 = Consented. Others = Not.
+    const isConsented = (patientId === '1001');
+
+    if (isConsented) {
+        res.json({ consented: true, status: "OPT_IN" });
+    } else {
+        // Log the denial event
+        logEvent({
+            actor: "RESEARCHER",
+            action: "E", // Execute decision
+            resource: `Patient/${patientId}`,
+            outcome: "4", // Minor Failure (Blocked)
+            desc: "Consent Denied by RCF"
+        });
+        res.json({ consented: false, status: "OPT_OUT" });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`⚖️  RCF Compliance Service listening on port ${PORT}`);
     console.log(`   - Audit Trail & Ethics Engine Active`);
