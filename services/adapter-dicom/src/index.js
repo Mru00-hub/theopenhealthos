@@ -3,7 +3,7 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const PORT = 3005;
+const PORT = 3006;
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
