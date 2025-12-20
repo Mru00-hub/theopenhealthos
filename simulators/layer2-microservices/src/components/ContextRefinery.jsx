@@ -456,8 +456,51 @@ const FhirView = ({ bundle }) => (
 const ClinicalCard = ({ resource }) => {
   const isEnriched = resource.meta?.tag?.some(t => t.code === 'aligned');
   const isRedacted = resource.variant?.[0]?.observedAllele === 'REDACTED_POLICY_101' || resource.description === '[REDACTED STUDY]' || resource.actualArm === 'REDACTED';
-  const typeIcons = { Observation: Activity, MolecularSequence: Cpu, ImagingStudy: resource.modality?.[0]?.code === 'SM' ? Microscope : FileImage, ResearchSubject: FileText };
+  
+  // Dynamic Icon Mapping
+  const typeIcons = { 
+      Observation: Activity, 
+      MolecularSequence: Cpu, 
+      ImagingStudy: resource.modality?.[0]?.code === 'SM' ? Microscope : FileImage, 
+      ResearchSubject: FileText,
+      Specimen: Microscope, 
+      QuestionnaireResponse: FileText,
+      Patient: UserCheck, // New Icon
+      Encounter: Database     // New Icon
+  };
   const Icon = typeIcons[resource.resourceType] || Database;
+
+  // SAFE DISPLAY LOGIC
+  const getDisplayText = (res) => {
+      // 1. Patient (The fix for your "Unknown")
+      if (res.resourceType === 'Patient' && res.name && res.name.length > 0) {
+          const n = res.name[0];
+          return `${n.given?.join(' ')} ${n.family}`;
+      }
+
+      // 2. Encounter
+      if (res.resourceType === 'Encounter' && res.class) {
+          return `${res.class.display} Visit`;
+      }
+
+      // 3. Observations
+      if (res.code?.text) return res.code.text;
+      
+      // 4. Imaging
+      if (res.description) return res.description;
+      
+      // 5. Pathology (Specimen)
+      if (res.type) {
+          if (typeof res.type === 'string') return res.type;
+          if (res.type.text) return res.type.text;
+          if (res.type.coding?.[0]?.display) return res.type.coding[0].display;
+      }
+      
+      // 6. Research
+      if (res.study?.display) return res.study.display;
+      
+      return "Unknown Data";
+  };
 
   return (
     <div className={`p-3 rounded border bg-slate-800 relative ${isEnriched ? 'border-green-500/40' : 'border-slate-700'} ${isRedacted ? 'border-red-500/40 opacity-70' : ''}`}>
@@ -467,16 +510,31 @@ const ClinicalCard = ({ resource }) => {
       </div>
       
       <div className="text-sm font-medium text-slate-200 truncate">
-        {resource.code?.text || resource.description || resource.type || resource.study?.display || "Unknown"}
+        {getDisplayText(resource)}
       </div>
       
+      {/* Vitals */}
       {resource.valueQuantity && <div className="text-lg font-bold text-white mt-1">{resource.valueQuantity.value} <span className="text-xs font-normal text-slate-400">{resource.valueQuantity.unit}</span></div>}
       
+      {/* Patient Specifics */}
+      {resource.resourceType === 'Patient' && <div className="mt-1 text-xs text-slate-400">{resource.gender}, DOB: {resource.birthDate}</div>}
+
+      {/* Encounter Specifics */}
+      {resource.resourceType === 'Encounter' && resource.location && <div className="mt-1 text-xs text-slate-400">Loc: {resource.location[0].location.display}</div>}
+
+      {/* Genomics */}
       {resource.variant && <div className="mt-2 text-[10px] font-mono text-red-300 bg-black/20 p-1 rounded">{resource.variant[0].observedAllele}</div>}
       
+      {/* Imaging Stats */}
       {resource.numberOfInstances && <div className="mt-2 text-[10px] text-slate-400 bg-slate-700/50 p-1 rounded inline-block">{resource.numberOfInstances} Instances ({resource.modality?.[0]?.code})</div>}
 
+      {/* Research Stats */}
       {resource.resourceType === 'ResearchSubject' && <div className="mt-2 text-[10px] text-purple-300 bg-purple-900/20 p-1 rounded inline-block">Arm: {resource.actualArm}</div>}
+      
+      {/* Pathology / Specimen Stats */}
+      {resource.resourceType === 'Specimen' && resource.collection?.bodySite && (
+          <div className="mt-2 text-[10px] text-pink-300 bg-pink-900/20 p-1 rounded inline-block">Site: {resource.collection.bodySite.text}</div>
+      )}
 
       {isEnriched && <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_5px_rgba(34,197,94,0.8)]" />}
     </div>
