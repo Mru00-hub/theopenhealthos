@@ -33,7 +33,9 @@ const enrichResource = async (resource) => {
                             if (c.display) loincCode.display = c.display; 
                         }
                     }
-                } catch (e) { /* Ignore lookup errors */ }
+                } catch (e) { 
+                    console.warn(`[Aligner] LOINC Lookup Failed for ${loincCode.code}: ${e.message}`); 
+                }
             }
         };
 
@@ -71,7 +73,9 @@ const enrichResource = async (resource) => {
                         });
                         if (lookup.data.display) res.code.text = lookup.data.display;
                     }
-                } catch (e) { /* Ignore */ }
+                } catch (e) {
+                    console.warn(`[Aligner] SNOMED Lookup Failed for ${snomedCode.code}: ${e.message}`);
+                }
             }
         }
 
@@ -87,7 +91,9 @@ const enrichResource = async (resource) => {
                         display: lookup.data.concept.display
                     });
                 }
-            } catch (e) { /* Ignore */ }
+            } catch (e) { 
+                console.warn(`[Aligner] RxNorm Lookup Failed for ${drugName}: ${e.message}`);
+            }
         }
 
         // --- E. RESEARCH ---
