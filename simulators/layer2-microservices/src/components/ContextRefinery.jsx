@@ -32,51 +32,29 @@ const API = {
 
 // --- MOCK RAW DATA ---
 const MOCK_DATA = {
-  HL7: {
-    resourceType: "Observation",
-    id: "obs-hl7-001",
-    status: "final",
-    code: { text: "Pulse" }, 
-    valueQuantity: { value: 82, unit: "bpm" },
-    effectiveDateTime: new Date().toISOString()
+const RAW_SOURCES = {
+  HL7: { 
+    type: "ORU", 
+    payload: "MSH|^~\\&|HOS|...|PULSE|82|BPM" 
   },
-  GENOMICS: {
-    resourceType: "MolecularSequence",
-    id: "seq-001",
-    type: "dna",
-    variant: [{ observedAllele: "BRCA1:c.68_69delAG" }] 
+  GENOMICS: { 
+    format: "VCF", 
+    variant: "chr17:41245466:G:A" 
   },
-  PATHOLOGY: {
-    resourceType: "ImagingStudy",
-    id: "wsi-001",
-    status: "available",
-    modality: [{ code: "SM", display: "Slide Microscopy" }],
-    subject: { reference: "Patient/1001" },
-    numberOfInstances: 45,
-    description: "Breast Biopsy - H&E Stained WSI"
+  PATHOLOGY: { 
+    slideId: "SLIDE-999", 
+    stain: "H&E" 
   },
-  SDOH: {
-    resourceType: "Observation",
-    id: "sdoh-001",
-    code: { text: "Housing" },
-    valueString: "unstable"
+  SDOH: { 
+    surveyId: "SURVEY-101", 
+    answers: { housing: "unstable" } 
   },
-  RESEARCH: {
-    resourceType: "ResearchSubject",
-    id: "res-001",
-    status: "active",
-    study: { display: "Oncology Cohort A (External)" },
-    assignedArm: "Control Group",
-    actualArm: "Placebo"
+  RESEARCH: { 
+    cohortId: "COHORT-A" 
   },
-  DICOM: {
-    resourceType: "ImagingStudy",
-    id: "pacs-001",
-    status: "available",
-    modality: [{ code: "MR", display: "Magnetic Resonance" }],
-    subject: { reference: "Patient/1001" },
-    numberOfInstances: 120,
-    description: "Brain MRI - T1 Weighted"
+  DICOM: { 
+    modality: "MR", 
+    seriesDescription: "Brain T1" 
   }
 };
 
@@ -114,15 +92,65 @@ const ContextRefinery = () => {
     let bundle = { resourceType: "Bundle", entry: [] };
 
     try {
-      // 1. INGESTION
-      if (switches.source_hl7) bundle.entry.push({ resource: MOCK_DATA.HL7 });
-      if (switches.source_genomics) bundle.entry.push({ resource: MOCK_DATA.GENOMICS });
-      if (switches.source_pathology) bundle.entry.push({ resource: MOCK_DATA.PATHOLOGY });
-      if (switches.source_sdoh) bundle.entry.push({ resource: MOCK_DATA.SDOH });
-      if (switches.source_research) bundle.entry.push({ resource: MOCK_DATA.RESEARCH });
-      if (switches.source_dicom) bundle.entry.push({ resource: MOCK_DATA.DICOM });
+            // 1. INGESTION (Zone A) - REAL NETWORK CALLS
+      // We send RAW data to the adapters. They must return FHIR.
+      const ingestionPromises = [];
+
+      if (switches.source_hl7) {
+        ingestionPromises.push(
+          axios.post(API.ADAPTER_HL7, RAW_SOURCES.HL7)
+            .then(res => ({ type: 'HL7', resource: res.data }))
+            .catch(e => { addLog("❌ HL7 Adapter Offline"); return null; })
+        );
+      }
+      if (switches.source_genomics) {
+        ingestionPromises.push(
+          axios.post(API.ADAPTER_GENOMICS, RAW_SOURCES.GENOMICS)
+            .then(res => ({ type: 'Genomics', resource: res.data }))
+            .catch(e => { addLog("❌ Genomics Adapter Offline"); return null; })
+        );
+      }
+      if (switches.source_pathology) {
+        ingestionPromises.push(
+          axios.post(API.ADAPTER_PATHOLOGY, RAW_SOURCES.PATHOLOGY)
+            .then(res => ({ type: 'Pathology', resource: res.data }))
+            .catch(e => { addLog("❌ Pathology Adapter Offline"); return null; })
+        );
+      }
+      if (switches.source_sdoh) {
+        ingestionPromises.push(
+          axios.post(API.ADAPTER_SDOH, RAW_SOURCES.SDOH)
+            .then(res => ({ type: 'SDOH', resource: res.data }))
+            .catch(e => { addLog("❌ SDOH Adapter Offline"); return null; })
+        );
+      }
+      if (switches.source_research) {
+        ingestionPromises.push(
+          axios.post(API.ADAPTER_RESEARCH, RAW_SOURCES.RESEARCH)
+            .then(res => ({ type: 'Research', resource: res.data }))
+            .catch(e => { addLog("❌ Research Adapter Offline"); return null; })
+        );
+      }
+      if (switches.source_dicom) {
+        ingestionPromises.push(
+          axios.post(API.ADAPTER_DICOM, RAW_SOURCES.DICOM)
+            .then(res => ({ type: 'DICOM', resource: res.data }))
+            .catch(e => { addLog("❌ DICOM Adapter Offline"); return null; })
+        );
+      }
+
+      // Wait for all adapters to respond
+      const results = await Promise.all(ingestionPromises);
+      
+      // Only add successfully fetched resources to the bundle
+      results.forEach(res => {
+        if (res && res.resource) {
+           bundle.entry.push({ resource: res.resource });
+        }
+      });
 
       if (bundle.entry.length === 0) {
+        // If no adapters responded (or all switches off)
         setDisplayData(null);
         setLoading(false);
         return;
@@ -185,11 +213,20 @@ const ContextRefinery = () => {
       // 4. OUTPUT BRANCH
       if (switches.layer_canonical) {
         try {
+          // REAL NETWORK CALL: If Port 3016 is down, this throws.
           const res = await axios.post(API.CANONICAL, bundle);
+          
           setDisplayData({ type: 'OMOP', content: res.data.cdm }); 
           addLog("✅ Canonical: Generated OMOP Tables.");
         } catch (e) {
-          addLog("❌ Mapper Offline (Port 3016).");
+          addLog("❌ CRTICAL: Mapper Service Offline (Port 3016).");
+          // FORCE ERROR UI: Prove that we need the backend
+          setDisplayData({ 
+              type: 'ERROR', 
+              message: "Connection Failed: Canonical Mapper (Port 3016) is unreachable. Cannot generate OMOP CDM." 
+          });
+          setLoading(false);
+          return; // Stop the pipeline. Do not fall back to FHIR.
         }
       } else if (switches.layer_context) {
         try {
@@ -389,9 +426,21 @@ const ResearchTable = ({ data }) => (
           <tr><th className="p-2">Domain</th><th className="p-2">Concept ID</th><th className="p-2">Value</th><th className="p-2">Source</th></tr>
         </thead>
         <tbody className="divide-y divide-slate-800">
+          {/* ... Existing MEASUREMENT, OBSERVATION, NOTE maps ... */}
+          
           {data.MEASUREMENT?.map((m, i) => <tr key={`m${i}`}><td className="p-2 text-blue-400">MEASUREMENT</td><td className="p-2 font-mono">{m.measurement_concept_id}</td><td className="p-2">{m.value_as_number} {m.unit_source_value}</td><td className="p-2 text-slate-500">{m.measurement_source_value}</td></tr>)}
           {data.OBSERVATION?.map((o, i) => <tr key={`o${i}`}><td className="p-2 text-green-400">OBSERVATION</td><td className="p-2 font-mono">{o.observation_concept_id}</td><td className="p-2">{o.value_as_string}</td><td className="p-2 text-slate-500">{o.observation_source_value}</td></tr>)}
           {data.NOTE?.map((n, i) => <tr key={`n${i}`}><td className="p-2 text-pink-400">NOTE (NLP)</td><td className="p-2 font-mono text-slate-600">44814645</td><td className="p-2 italic text-slate-400">{n.note_text}</td><td className="p-2 text-slate-500">{n.note_title}</td></tr>)}
+
+          {/* ✅ NEW: PROCEDURE TABLE (Imaging) */}
+          {data.PROCEDURE_OCCURRENCE?.map((p, i) => (
+            <tr key={`p${i}`}>
+              <td className="p-2 text-orange-400">PROCEDURE</td>
+              <td className="p-2 font-mono">{p.procedure_concept_id}</td>
+              <td className="p-2">{p.modifier_source_value}</td>
+              <td className="p-2 text-slate-500">{p.procedure_source_value}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
