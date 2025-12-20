@@ -8,9 +8,8 @@ const app = express();
 const PORT = process.env.PORT || 3015;
 
 app.use(cors({
-    origin: '*', // Allow all origins (for development)
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    origin: true, // Allow any origin (including your Codespace URL)
+    credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
 
