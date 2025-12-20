@@ -197,7 +197,7 @@ const ContextRefinery = () => {
       }
 
       // 3. GOVERNANCE TRIAD (Layer 5)
-      
+      let govMeta = { auditId: null, consent: null };
       // A. PCRM (Policy)
       if (switches.layer_pcrm) {
         try {
@@ -218,27 +218,38 @@ const ContextRefinery = () => {
       if (switches.layer_rcf && role === 'RESEARCHER') {
         try {
             const consentRes = await axios.post(API.RCF, { patientId: '1001', studyId: 'RES-001' });
-            if (consentRes.data.consented === false) {
+            
+            if (role === 'RESEARCHER' && consentRes.data.consented === false) {
                 addLog("⛔ RCF: Patient OPTED OUT of Research. Blocking Data.");
                 setDisplayData({ type: 'BLOCKED', reason: "Consent Revoked (RCF)" });
                 setLoading(false);
                 return;
-            } else {
-                addLog("✅ RCF: Research Consent Verified.");
-            }
+            } 
+            
+            // CAPTURE SUCCESS STATUS
+            govMeta.consent = role === 'RESEARCHER' ? "VERIFIED (OPT-IN)" : "ETHICS CHECK PASSED";
+            addLog(`✅ RCF: ${govMeta.consent}`);
+            
         } catch(e) { addLog("⚠️ RCF Service Unreachable"); }
       }
 
-      // C. SAS (Audit)
+      // C. SAS (Audit) - UPDATED TO BE VISIBLE
       if (switches.layer_sas) {
-        axios.post(API.SAS, { 
-            timestamp: new Date(), 
-            user: role, 
-            action: 'VIEW_PIPELINE', 
-            records: bundle.entry.length 
-        }).then(() => addLog("ea SAS: Immutable Audit Log Written."));
+        try {
+            // Await the response to get the ID
+            const sasRes = await axios.post(API.SAS, { 
+                timestamp: new Date(), 
+                user: role, 
+                action: 'VIEW_PIPELINE', 
+                records: bundle.entry.length 
+            });
+            
+            // CAPTURE AUDIT ID
+            govMeta.auditId = sasRes.data.id || Date.now(); 
+            addLog(`ea SAS: Log Written (ID: ${govMeta.auditId})`);
+        } catch (e) { console.error(e); }
       }
-
+      
       // 4. OUTPUT BRANCH
       if (switches.layer_canonical) {
         try {
@@ -450,9 +461,18 @@ const PipelineStage = ({ label, desc, active, color, onClick, disabled, icon }) 
     );
 };
 
-const FhirView = ({ bundle }) => (
-    <div className="grid grid-cols-2 gap-3">
-        {bundle.entry?.map((e, i) => <ClinicalCard key={i} resource={e.resource} />)}
+const FhirView = ({ bundle, governance }) => (
+    <div className="space-y-3">
+        {/* Same Governance Header */}
+        {(governance?.auditId || governance?.consent) && (
+             <div className="flex gap-2 mb-2">
+                {governance.auditId && <span className="text-[9px] bg-blue-900 text-blue-300 px-1 rounded border border-blue-700">Audit: {governance.auditId}</span>}
+                {governance.consent && <span className="text-[9px] bg-orange-900 text-orange-300 px-1 rounded border border-orange-700">{governance.consent}</span>}
+             </div>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+            {bundle.entry?.map((e, i) => <ClinicalCard key={i} resource={e.resource} />)}
+        </div>
     </div>
 );
 
@@ -581,6 +601,22 @@ const ResearchTable = ({ data }) => (
 // ✅ UPDATED CONTEXT VIEW (Visualizes Redaction)
 const ContextView = ({ profile }) => (
     <div className="space-y-4">
+        {(governance?.auditId || governance?.consent) && (
+            <div className="flex flex-wrap gap-2 animate-pulse">
+                {governance.auditId && (
+                    <div className="bg-blue-900/40 border border-blue-500/50 text-blue-200 text-[10px] px-2 py-1 rounded flex items-center gap-2 shadow-sm">
+                        <FileText size={12} className="text-blue-400" /> 
+                        <span className="font-mono">SAS AUDIT ID: {governance.auditId}</span>
+                    </div>
+                )}
+                {governance.consent && (
+                    <div className="bg-orange-900/40 border border-orange-500/50 text-orange-200 text-[10px] px-2 py-1 rounded flex items-center gap-2 shadow-sm">
+                        <UserCheck size={12} className="text-orange-400" /> 
+                        <span className="font-bold">{governance.consent}</span>
+                    </div>
+                )}
+            </div>
+        )}
         <div className="grid grid-cols-3 gap-3">
             <StatBox label="Acuity" value={`${profile.clinical_status?.acuity_score || 0}/10`} color="emerald" />
             <StatBox label="Problems" value={profile.active_problems?.length || 0} color="blue" />
