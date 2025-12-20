@@ -144,7 +144,7 @@ const ContextRefinery = () => {
       }
       if (switches.source_research) {
         ingestionPromises.push(
-          axios.post(`${API.ADAPTER_RESEARCH}/ingest/subject`, RAW_SOURCES.RESEARCH) 
+          axios.post(`${API.ADAPTER_RESEARCH}/subject`, RAW_SOURCES.RESEARCH) 
             .then(res => ({ type: 'Research', resource: res.data }))
             .catch(e => { addLog("❌ Research Adapter Offline"); return null; })
         );
@@ -457,7 +457,6 @@ const ClinicalCard = ({ resource }) => {
   const isEnriched = resource.meta?.tag?.some(t => t.code === 'aligned');
   const isRedacted = resource.variant?.[0]?.observedAllele === 'REDACTED_POLICY_101' || resource.description === '[REDACTED STUDY]' || resource.actualArm === 'REDACTED';
   
-  // Dynamic Icon Mapping
   const typeIcons = { 
       Observation: Activity, 
       MolecularSequence: Cpu, 
@@ -465,29 +464,30 @@ const ClinicalCard = ({ resource }) => {
       ResearchSubject: FileText,
       Specimen: Microscope, 
       QuestionnaireResponse: FileText,
-      Patient: UserCheck, // New Icon
-      Encounter: Database     // New Icon
+      Patient: UserCheck, 
+      Encounter: Database
   };
   const Icon = typeIcons[resource.resourceType] || Database;
 
-  // SAFE DISPLAY LOGIC
+  // SMART DISPLAY LOGIC
   const getDisplayText = (res) => {
-      // 1. Patient (The fix for your "Unknown")
-      if (res.resourceType === 'Patient' && res.name && res.name.length > 0) {
+      // 1. Patient
+      if (res.resourceType === 'Patient' && res.name?.length > 0) {
           const n = res.name[0];
           return `${n.given?.join(' ')} ${n.family}`;
       }
 
       // 2. Encounter
-      if (res.resourceType === 'Encounter' && res.class) {
-          return `${res.class.display} Visit`;
-      }
+      if (res.resourceType === 'Encounter' && res.class) return `${res.class.display} Visit`;
 
-      // 3. Observations
+      // 3. Observations (Vitals & SDOH)
       if (res.code?.text) return res.code.text;
-      
-      // 4. Imaging
+      if (res.code?.coding?.[0]?.display) return res.code.coding[0].display;
+
+      // 4. Imaging (MRI & Pathology)
       if (res.description) return res.description;
+      // FIX: Pathology description is often deep in the series
+      if (res.series?.[0]?.description) return res.series[0].description;
       
       // 5. Pathology (Specimen)
       if (res.type) {
@@ -498,6 +498,9 @@ const ClinicalCard = ({ resource }) => {
       
       // 6. Research
       if (res.study?.display) return res.study.display;
+
+      // 7. Survey Response (Questionnaire)
+      if (res.resourceType === 'QuestionnaireResponse') return "Patient Survey Response";
       
       return "Unknown Data";
   };
@@ -509,13 +512,17 @@ const ClinicalCard = ({ resource }) => {
         <span className="text-[10px] font-bold uppercase">{resource.resourceType}</span>
       </div>
       
-      <div className="text-sm font-medium text-slate-200 truncate">
+      <div className="text-sm font-medium text-slate-200 truncate" title={getDisplayText(resource)}>
         {getDisplayText(resource)}
       </div>
       
       {/* Vitals */}
       {resource.valueQuantity && <div className="text-lg font-bold text-white mt-1">{resource.valueQuantity.value} <span className="text-xs font-normal text-slate-400">{resource.valueQuantity.unit}</span></div>}
       
+      {/* SDOH Values */}
+      {resource.valueCodeableConcept && <div className="mt-1 text-xs text-orange-300">{resource.valueCodeableConcept.coding[0].display}</div>}
+      {resource.valueBoolean !== undefined && <div className="mt-1 text-xs text-orange-300">{resource.valueBoolean ? "True" : "False"}</div>}
+
       {/* Patient Specifics */}
       {resource.resourceType === 'Patient' && <div className="mt-1 text-xs text-slate-400">{resource.gender}, DOB: {resource.birthDate}</div>}
 
