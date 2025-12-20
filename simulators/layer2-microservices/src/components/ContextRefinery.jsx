@@ -278,7 +278,7 @@ const ContextRefinery = () => {
              }
           });
           
-          setDisplayData({ type: 'CONTEXT', content: res.data, liveData: bundle });
+          setDisplayData({ type: 'CONTEXT', content: res.data, liveData: bundle, governance: govMeta });
           addLog("👑 Context Engine: Golden Record Built.");
         } catch (e) {
            addLog("❌ Context Engine Offline (Port 4000).");
@@ -411,7 +411,7 @@ const ContextRefinery = () => {
               <>
                 {displayData.type === 'FHIR' && <FhirView bundle={displayData.content} />}
                 {displayData.type === 'OMOP' && <ResearchTable data={displayData.content} />}
-                {displayData.type === 'CONTEXT' && <ContextView profile={displayData.content} liveData={displayData.liveData} />}
+                {displayData.type === 'CONTEXT' && <ContextView profile={displayData.content} liveData={displayData.liveData} governance={displayData.governance} />}
                 {displayData.type === 'BLOCKED' && (
                     <div className="flex flex-col items-center justify-center h-full text-red-500">
                         <Shield size={48} className="mb-4" />
@@ -599,7 +599,7 @@ const ResearchTable = ({ data }) => (
   );
 
 // ✅ UPDATED CONTEXT VIEW (Visualizes Redaction)
-const ContextView = ({ profile }) => (
+const ContextView = ({ profile, governance }) => (
     <div className="space-y-4">
         {(governance?.auditId || governance?.consent) && (
             <div className="flex flex-wrap gap-2 animate-pulse">
