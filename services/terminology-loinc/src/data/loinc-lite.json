@@ -5,66 +5,40 @@
     "system": "http://loinc.org",
     "keywords": ["hr", "pulse", "bpm", "cardiac rate"],
     "unit": "/min",
-    "category": "vital-signs"
-  },
-  {
-    "code": "8480-6",
-    "display": "Systolic blood pressure",
-    "system": "http://loinc.org",
-    "keywords": ["sbp", "systolic", "blood pressure"],
-    "unit": "mm[Hg]",
-    "category": "vital-signs"
-  },
-  {
-    "code": "8462-4",
-    "display": "Diastolic blood pressure",
-    "system": "http://loinc.org",
-    "keywords": ["dbp", "diastolic", "blood pressure"],
-    "unit": "mm[Hg]",
-    "category": "vital-signs"
-  },
-  {
-    "code": "2708-6",
-    "display": "Oxygen saturation in Arterial blood",
-    "system": "http://loinc.org",
-    "keywords": ["spo2", "o2 sat", "pulse ox"],
-    "unit": "%",
-    "category": "vital-signs"
-  },
-  {
-    "code": "15074-8",
-    "display": "Glucose [Moles/volume] in Blood",
-    "system": "http://loinc.org",
-    "keywords": ["glu", "blood sugar", "bsl"],
-    "unit": "mmol/L",
-    "category": "laboratory"
-  },
-  {
-    "code": "69548-6",
-    "display": "Genetic variant [Presence] in Blood or Tissue",
-    "system": "http://loinc.org",
-    "keywords": ["variant", "mutation", "genomics", "dna"],
-    "category": "genetics"
-  },
-  {
-    "code": "60568-3",
-    "display": "Pathology Synoptic Report",
-    "system": "http://loinc.org",
-    "keywords": ["wsi", "slide", "biopsy", "histopathology"],
-    "category": "pathology"
+    "category": "vital-signs",
+    "omop_id": "3027018" 
   },
   {
     "code": "71802-3",
     "display": "Housing status",
     "system": "http://loinc.org",
     "keywords": ["homelessness", "housing", "shelter"],
-    "category": "sdoh"
+    "category": "sdoh",
+    "omop_id": "40766240"
   },
   {
     "code": "88124-3",
     "display": "Food insecurity risk [HVS]",
     "system": "http://loinc.org",
     "keywords": ["food", "hunger", "starvation"],
-    "category": "sdoh"
+    "category": "sdoh",
+    "omop_id": "40766241"
+  },
+  {
+    "code": "93033-9",
+    "display": "Transport insecurity",
+    "system": "http://loinc.org",
+    "keywords": ["transport", "car", "bus"],
+    "category": "sdoh",
+    "omop_id": "40766242"
+  },
+  {
+    "code": "60568-3",
+    "display": "Pathology Synoptic Report",
+    "system": "http://loinc.org",
+    "keywords": ["wsi", "slide", "biopsy"],
+    "category": "pathology",
+    "omop_id": "4052536"
   }
 ]
+
