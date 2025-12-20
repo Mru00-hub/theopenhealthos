@@ -30,31 +30,48 @@ const API = {
   CONTEXT_ENGINE:    `${BASE_URL}-4000.app.github.dev/context`
 };
 
-// --- MOCK RAW DATA ---
-const MOCK_DATA = {
+// --- RAW INPUTS (Real Data formats for your Transformers) ---
 const RAW_SOURCES = {
-  HL7: { 
-    type: "ORU", 
-    payload: "MSH|^~\\&|HOS|...|PULSE|82|BPM" 
-  },
-  GENOMICS: { 
-    format: "VCF", 
-    variant: "chr17:41245466:G:A" 
-  },
+  // 1. HL7: Must be a multi-segment string so 'transform' finds PID and OBX
+  HL7: `MSH|^~\\&|HOS|Lab|EHR|Main|20251220|123|ORU^R01|MSG001|P|2.3
+PID|||1001||Doe^John||19800101|M
+PV1||I|ICU^^Bed1
+OBX|1|NM|8867-4^Heart Rate||82|bpm||||F`,
+
+  // 2. GENOMICS: Raw VCF String (Text)
+  GENOMICS: `##fileformat=VCFv4.2
+#CHROM POS ID REF ALT QUAL FILTER INFO
+chr17 41245466 . G A . . gene=BRCA1`,
+
+  // 3. PATHOLOGY: JSON Metadata
   PATHOLOGY: { 
-    slideId: "SLIDE-999", 
-    stain: "H&E" 
+    slideId: "SLIDE-2025-001", 
+    stain: "H&E", 
+    bodySite: "Breast",
+    magnification: 40 
   },
+
+  // 4. SDOH: JSON Survey
   SDOH: { 
-    surveyId: "SURVEY-101", 
-    answers: { housing: "unstable" } 
+    housing_status: "unstable", 
+    food_security: "insecure", 
+    transportation: "none" 
   },
+
+  // 5. RESEARCH: JSON Subject Data
+  // Note: Matches your Research Adapter 'transformSubject' expectation
   RESEARCH: { 
-    cohortId: "COHORT-A" 
+    protocol_id: "ONCO-2025-001", 
+    status: "enrolled", 
+    arm_group: "Experimental" 
   },
+
+  // 6. DICOM: JSON Tags
   DICOM: { 
+    patientId: "1001", 
     modality: "MR", 
-    seriesDescription: "Brain T1" 
+    studyDescription: "Brain MRI - T1", 
+    instanceCount: 150 
   }
 };
 
@@ -98,14 +115,14 @@ const ContextRefinery = () => {
 
       if (switches.source_hl7) {
         ingestionPromises.push(
-          axios.post(API.ADAPTER_HL7, RAW_SOURCES.HL7)
+          axios.post(API.ADAPTER_HL7, RAW_SOURCES.HL7, { headers: { 'Content-Type': 'text/plain' } })
             .then(res => ({ type: 'HL7', resource: res.data }))
             .catch(e => { addLog("❌ HL7 Adapter Offline"); return null; })
         );
       }
       if (switches.source_genomics) {
         ingestionPromises.push(
-          axios.post(API.ADAPTER_GENOMICS, RAW_SOURCES.GENOMICS)
+          axios.post(API.ADAPTER_GENOMICS, RAW_SOURCES.GENOMICS, { headers: { 'Content-Type': 'text/plain' } })
             .then(res => ({ type: 'Genomics', resource: res.data }))
             .catch(e => { addLog("❌ Genomics Adapter Offline"); return null; })
         );
@@ -126,7 +143,7 @@ const ContextRefinery = () => {
       }
       if (switches.source_research) {
         ingestionPromises.push(
-          axios.post(API.ADAPTER_RESEARCH, RAW_SOURCES.RESEARCH)
+          axios.post(`${API.ADAPTER_RESEARCH}/ingest/subject`, RAW_SOURCES.RESEARCH) 
             .then(res => ({ type: 'Research', resource: res.data }))
             .catch(e => { addLog("❌ Research Adapter Offline"); return null; })
         );
