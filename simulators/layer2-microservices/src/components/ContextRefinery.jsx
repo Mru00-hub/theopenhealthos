@@ -163,10 +163,21 @@ const ContextRefinery = () => {
       // Only add successfully fetched resources to the bundle
       results.forEach(res => {
         if (res && res.resource) {
-           bundle.entry.push({ resource: res.resource });
+           const data = res.resource;
+           
+           // If the adapter returned a Bundle, extract its contents
+           if (data.resourceType === 'Bundle' && data.entry) {
+               data.entry.forEach(e => {
+                   // Push the INNER resource, not the wrapper
+                   if (e.resource) bundle.entry.push({ resource: e.resource });
+               });
+           } else {
+               // It's already a single resource (Genomics/DICOM)
+               bundle.entry.push({ resource: data });
+           }
         }
       });
-
+      
       if (bundle.entry.length === 0) {
         // If no adapters responded (or all switches off)
         setDisplayData(null);
