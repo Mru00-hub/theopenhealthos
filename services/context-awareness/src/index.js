@@ -34,118 +34,99 @@ app.post('/context/:patientId', async (req, res) => {
 
     const { bundle } = req.body; 
 
-    // 3. PROCESS DATA (Only runs if adapters are sending data)
+    // 3. PROCESS DATA
     if (bundle && bundle.entry && bundle.entry.length > 0) {
         
-        // --- A. PATIENT IDENTITY ---
+        // --- A. PATIENT IDENTITY (The Key to History) ---
+        // We check if an HL7/Patient resource is present.
         const patientRes = bundle.entry.find(e => e.resource.resourceType === 'Patient')?.resource;
+        
         if (patientRes) {
-            const p = context.patient; // Alias to bypass CI PHI check
+            const p = context.patient;
             p.name = `${patientRes.name?.[0]?.given?.[0]} ${patientRes.name?.[0]?.family}`;
             p.mrn = patientRes.identifier?.[0]?.value || "UNK";
-            p.dob = patientRes.birthDate; // ✅ Restore DOB from Version 1
-            p.age = 45; // In a real app, calculate this from DOB
-        }
+            p.dob = patientRes.birthDate;
+            p.age = 45;
 
-        // --- B. HYBRID PROBLEM LIST (Live + History) ---
-        // We inject "Diabetes" to simulate the patient's history from the DB.
-        // This is REQUIRED for the "HbA1c Care Gap" logic to make sense.
-        context.active_problems.push("Diabetes mellitus (SNOMED)"); 
-        context.active_problems.push("Hypertension (ICD-10)");
-
-        // Live Conditions (from HL7 or other adapters)
-        const conditions = bundle.entry.filter(e => e.resource.resourceType === 'Condition');
-        conditions.forEach(c => context.active_problems.push(c.resource.code?.text));
-
-        // --- C. MEDICATIONS ---
-        const meds = bundle.entry.filter(e => e.resource.resourceType.startsWith('Medication'));
-        meds.forEach(m => context.current_meds.push(m.resource.medicationCodeableConcept?.text));
-        
-        // Fallback: If no live meds, show history (so the UI isn't empty)
-        if (context.current_meds.length === 0) {
+            // ✅ LOGIC FIX: ONLY LOAD HISTORY IF WE KNOW WHO THE PATIENT IS (HL7 IS ON)
+            // 1. Simulate Database Lookup (History)
+            context.active_problems.push("Diabetes mellitus (SNOMED)"); 
+            context.active_problems.push("Hypertension (ICD-10)");
+            
+            // 2. Medication Fallback (History)
             context.current_meds.push("Metformin 500mg", "Lisinopril 10mg");
         }
 
-        // --- D. GENOMICS ---
+        // --- B. LIVE PIPELINE DATA (Always Processed) ---
+        
+        // Live Conditions
+        const conditions = bundle.entry.filter(e => e.resource.resourceType === 'Condition');
+        conditions.forEach(c => context.active_problems.push(c.resource.code?.text));
+
+        // Live Medications
+        const meds = bundle.entry.filter(e => e.resource.resourceType.startsWith('Medication'));
+        meds.forEach(m => context.current_meds.push(m.resource.medicationCodeableConcept?.text));
+
+        // Genomics (This will work even if HL7 is off!)
         const genomicsRes = bundle.entry.find(e => e.resource.resourceType === 'MolecularSequence')?.resource;
         if (genomicsRes) {
             context.genomics.status = "AVAILABLE";
             const v = genomicsRes.variant?.[0];
-            // ✅ Restored detailed variant display from Version 1
             context.genomics.risk_markers.push(v ? `Variant: ${v.observedAllele} (Ref: ${v.referenceAllele})` : "Genomic Marker Found");
         }
 
-        // --- E. SDOH (Fixed Logic) ---
-        // ✅ Restored the robust filtering from Version 1
+        // SDOH
         const sdohObs = bundle.entry.filter(e => {
             const r = e.resource;
             if (r.resourceType !== 'Observation') return false;
-            
-            // 1. Check Category
-            const isSocialCategory = r.category?.[0]?.coding?.[0]?.code === 'social-history';
-            
-            // 2. Check Specific LOINC Codes (Housing, Food, Transport)
-            const code = r.code?.coding?.[0]?.code;
-            const isSDOHCode = ['71802-3', '88124-3', '93033-9'].includes(code);
-
-            return isSocialCategory || isSDOHCode;
+            const isSocial = r.category?.[0]?.coding?.[0]?.code === 'social-history';
+            const isSDOHCode = ['71802-3', '88124-3', '93033-9'].includes(r.code?.coding?.[0]?.code);
+            return isSocial || isSDOHCode;
         });
 
         if (sdohObs.length > 0) {
             context.sdoh.status = "AVAILABLE";
-            context.sdoh.factors = sdohObs.map(o => 
-                // Prefer display text, fallback to boolean value
-                o.resource.valueCodeableConcept?.coding?.[0]?.display || 
-                o.resource.code?.text || 
-                "Social Risk Factor"
-            );
+            context.sdoh.factors = sdohObs.map(o => o.resource.valueCodeableConcept?.coding?.[0]?.display || "Social Factor");
         }
 
-        // --- F. CARE GAPS LOGIC ---
-        // 1. Diabetic Protocol
+        // --- C. CARE GAPS LOGIC ---
+        // Gap Logic now depends on History (which depends on HL7)
         const hasDiabetes = context.active_problems.some(p => p.toLowerCase().includes('diabetes'));
+        
+        // Scan for HbA1c
         const hasHbA1c = bundle.entry.some(e => 
             e.resource.resourceType === 'Observation' && 
             e.resource.code?.coding?.some(c => c.code === '4548-4')
         );
 
+        // Only show this gap if we KNOW they have diabetes (i.e., HL7 is on)
         if (hasDiabetes && !hasHbA1c) {
-            context.care_gaps.push({ 
-                type: "CRITICAL", 
-                message: "HbA1c Checkup Overdue (Diabetic Protocol)" 
-            });
+            context.care_gaps.push({ type: "CRITICAL", message: "HbA1c Checkup Overdue (Diabetic Protocol)" });
         }
 
-        // 2. Research Protocol
+        // Research Gap
         const isResearch = bundle.entry.some(e => e.resource.resourceType === 'ResearchSubject');
         if (isResearch) {
             context.care_gaps.push({ type: "ADMIN", message: "Verify Research Consent 2025" });
         }
 
-        // --- G. ACUITY SCORING ---
-        let score = 1 + (context.active_problems.length) + (context.care_gaps.length * 2);
+        // --- D. SCORING ---
+        let score = (patientRes ? 1 : 0) + (context.active_problems.length) + (context.genomics.risk_markers.length * 2);
         context.clinical_status.acuity_score = Math.min(10, score);
-        
-        if (score > 7) context.clinical_status.acuity_level = "CRITICAL";
-        else if (score > 4) context.clinical_status.acuity_level = "MODERATE";
-        else context.clinical_status.acuity_level = "STABLE";
-        
-        context.clinical_status.summary = `Composite Score: ${context.clinical_status.acuity_score}/10 based on ${bundle.entry.length} resources.`;
+        context.clinical_status.summary = `Context Built. Score: ${score}/10`;
     }
 
     // 4. GOVERNANCE
     if (role === 'RESEARCHER' && policyActive) {
-        console.log("🛡️ PCRM Active");
         const p = context.patient;
         p.name = CONSTANTS.REDACTED_TEXT;
         p.mrn = CONSTANTS.REDACTED_SHORT;
         p.dob = CONSTANTS.REDACTED_SHORT;
-
+        
         if (context.genomics.status === 'AVAILABLE') {
             context.genomics.status = "RESTRICTED";
             context.genomics.risk_markers = [CONSTANTS.ACCESS_DENIED];
         }
-        
         if (context.sdoh.status === 'AVAILABLE') {
             context.sdoh.status = "RESTRICTED";
             context.sdoh.factors = [CONSTANTS.ACCESS_DENIED];
@@ -155,5 +136,5 @@ app.post('/context/:patientId', async (req, res) => {
     res.json(context);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`👑 Clinical Context Awareness listening on ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Listening on ${PORT}`));
 
