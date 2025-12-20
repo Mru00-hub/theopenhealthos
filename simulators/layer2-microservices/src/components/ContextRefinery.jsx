@@ -271,11 +271,8 @@ const ContextRefinery = () => {
       } else if (switches.layer_context) {
         try {
           // ✅ UPDATED: Pass Headers for Role-Based Redaction
-          const res = await axios.get(`${API.CONTEXT_ENGINE}/1001`, {
-             headers: { 
-                 'X-User-Role': role,
-                 'X-Policy-Active': switches.layer_pcrm.toString() // 'true' or 'false'
-             }
+          const res = await axios.post(`${API.CONTEXT_ENGINE}/context/1001`, { bundle }, { 
+            headers: { 'X-User-Role': role, 'X-Policy-Active': switches.layer_pcrm.toString() }
           });
           
           setDisplayData({ type: 'CONTEXT', content: res.data, liveData: bundle, governance: govMeta });
