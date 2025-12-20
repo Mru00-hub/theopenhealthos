@@ -7,7 +7,11 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3015;
 
-app.use(cors());
+app.use(cors({
+    origin: '*', // Allow all origins (for development)
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json({ limit: '50mb' }));
 
 // Health Check
