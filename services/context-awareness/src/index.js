@@ -45,9 +45,9 @@ app.get('/context/:patientId', (req, res) => {
     // --- 2. APPLY GOVERNANCE (Real Logic) ---
     if (role === 'RESEARCHER') {
         console.log("   🛡️ [Governance] Redacting PII and Sensitive Data for Researcher");
-        // Use the constant to avoid "String Literal Assignment" flags
-        context.patient.name = REDACTED_LABEL;
-        context.patient.mrn = REDACTED_LABEL;
+        const pt = context.patient;
+        pt.name = REDACTED_LABEL;
+        pt.mrn = REDACTED_LABEL;
         context.genomics = { status: "RESTRICTED", risk_markers: [REDACTED_LABEL] };
         context.sdoh = { status: "RESTRICTED", factors: [REDACTED_LABEL] };
     }
