@@ -226,6 +226,18 @@ services:
       interval: 30s
       timeout: 10s
 
+  adapter-dicom:
+    build: ./services/adapter-dicom
+    container_name: hos-adapter-dicom
+    ports:
+      - "3006:3006"
+    networks:
+      - hos-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3006/health"]
+      interval: 30s
+      timeout: 10s
+
   # --- SEMANTIC FABRIC (Terminologies) ---
 
   terminology-snomed:
@@ -446,7 +458,7 @@ services:
     build: ./simulators/layer1-architecture-explorer
     container_name: hos-arch-explorer
     ports:
-      - "3001:3000"
+      - "3031:3000"
     volumes:
       - ./simulators/layer1-architecture-explorer:/app
       - /app/node_modules
@@ -457,7 +469,7 @@ services:
     build: ./simulators/layer3-patient-journey
     container_name: hos-patient-journey
     ports:
-      - "3002:3000"
+      - "3032:3000"
     volumes:
       - ./simulators/layer3-patient-journey:/app
       - /app/node_modules
