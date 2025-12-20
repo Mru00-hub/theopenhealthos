@@ -14,16 +14,15 @@ const toOMOP = (bundle) => {
         VISIT_OCCURRENCE: [],
         CONDITION_OCCURRENCE: [],
         DRUG_EXPOSURE: [],
-        MEASUREMENT: [],   // Vitals, Labs
-        OBSERVATION: [],   // Surveys, Social History
-        NOTE: [],           // Unstructured text (Genomics)
+        MEASUREMENT: [],   
+        OBSERVATION: [],   
+        NOTE: [],           
         PROCEDURE_OCCURRENCE: []
     };
 
     if (!bundle || !bundle.entry) return cdm;
 
     // 1. Create a default Patient (Person)
-    // In a real app, we'd extract this from Patient resources.
     cdm.PERSON.push({
         person_id: 1001,
         gender_concept_id: 8507, // Male
@@ -36,28 +35,23 @@ const toOMOP = (bundle) => {
     bundle.entry.forEach((entry, index) => {
         const r = entry.resource;
         
-        // --- A. VITALS & LABS (MEASUREMENT) ---
+        // --- A. VITALS (MEASUREMENT) ---
         if (r.resourceType === 'Observation' && r.valueQuantity) {
-            
-            // CRITICAL FIX: Look for the LOINC code injected by Aligner
-            let conceptId = 0; // Default "Unmapped"
+            let conceptId = 0; 
             let sourceCode = r.code?.text || "Unknown";
 
-            // Check if Aligner added a standard coding
             if (r.code?.coding && r.code.coding.length > 0) {
-                const coding = r.code.coding[0]; // Take the first one (e.g., 8867-4)
+                const coding = r.code.coding[0]; 
                 sourceCode = coding.code;
-
-                // Simple Lookup Table for Demo
-                if (coding.code === '8867-4') conceptId = 3027018; // Heart Rate
-                if (coding.code === '9279-1') conceptId = 3024171; // Respiratory Rate
-                if (coding.code === '8310-5') conceptId = 3012888; // Body Temp
+                if (coding.code === '8867-4') conceptId = 3027018; 
+                if (coding.code === '9279-1') conceptId = 3024171; 
+                if (coding.code === '8310-5') conceptId = 3012888; 
             }
 
             cdm.MEASUREMENT.push({
                 measurement_id: index + 100,
                 person_id: 1001,
-                measurement_concept_id: conceptId, // <--- This will now be 3027018
+                measurement_concept_id: conceptId,
                 measurement_date: r.effectiveDateTime ? r.effectiveDateTime.split('T')[0] : new Date().toISOString().split('T')[0],
                 measurement_source_value: sourceCode,
                 value_as_number: r.valueQuantity.value,
@@ -65,15 +59,12 @@ const toOMOP = (bundle) => {
             });
         }
 
-        // --- B. SOCIAL HISTORY (OBSERVATION) ---
+        // --- B. SDOH (OBSERVATION) ---
         else if (r.resourceType === 'Observation' && r.valueString) {
-            
             let conceptId = 0;
-            // Check for LOINC codes for Housing/SDOH
             if (r.code?.coding && r.code.coding.length > 0) {
-                 if (r.code.coding[0].code === '71802-3') conceptId = 4330447; // Housing status
+                 if (r.code.coding[0].code === '71802-3') conceptId = 4330447; 
             }
-
             cdm.OBSERVATION.push({
                 observation_id: index + 200,
                 person_id: 1001,
@@ -84,11 +75,9 @@ const toOMOP = (bundle) => {
             });
         }
 
-        // --- C. GENOMICS (NOTE / MEASUREMENT) ---
+        // --- C. GENOMICS (NOTE) ---
         else if (r.resourceType === 'MolecularSequence') {
             const variant = r.variant?.[0]?.observedAllele || "Unknown Variant";
-            
-            // Check if Aligner tagged it with SNOMED
             const snomedTag = r.meta?.tag?.find(t => t.system.includes('snomed'));
             const title = snomedTag ? `Genomics (${snomedTag.display})` : "Genomics (Raw)";
 
@@ -96,11 +85,13 @@ const toOMOP = (bundle) => {
                 note_id: index + 300,
                 person_id: 1001,
                 note_date: new Date().toISOString().split('T')[0],
-                note_type_concept_id: 44814645, // "Note"
+                note_type_concept_id: 44814645, 
                 note_title: title,
                 note_text: `Variant: ${variant} | Status: ${snomedTag ? 'Pathogenic' : 'Unknown'}`
             });
         }
+
+        // --- D. IMAGING (PROCEDURE) ---
         else if (r.resourceType === 'ImagingStudy') {
             const modality = r.modality?.[0]?.code || "UNK";
             const desc = r.description || "Imaging";
@@ -108,10 +99,22 @@ const toOMOP = (bundle) => {
             cdm.PROCEDURE_OCCURRENCE.push({
                 procedure_occurrence_id: index + 500,
                 person_id: 1001,
-                procedure_concept_id: 0, // In real OMOP, we'd map CPT/LOINC here
+                procedure_concept_id: 0, 
                 procedure_date: new Date().toISOString().split('T')[0],
                 procedure_source_value: `${modality}: ${desc}`,
                 modifier_source_value: `${r.numberOfInstances} Instances`
+            });
+        }
+
+        // --- E. RESEARCH (OBSERVATION) - NEW! ---
+        else if (r.resourceType === 'ResearchSubject') {
+             cdm.OBSERVATION.push({
+                observation_id: index + 400,
+                person_id: 1001,
+                observation_concept_id: 0, 
+                observation_date: new Date().toISOString().split('T')[0],
+                observation_source_value: "Clinical Trial",
+                value_as_string: `Study: ${r.study?.display} | Arm: ${r.actualArm}`
             });
         }
     });
@@ -120,3 +123,5 @@ const toOMOP = (bundle) => {
 };
 
 module.exports = { toOMOP };
+
+ports = { toOMOP };
