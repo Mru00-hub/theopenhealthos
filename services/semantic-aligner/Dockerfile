@@ -1,7 +1,7 @@
 FROM node:18-alpine
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci 
 COPY . .
 EXPOSE 3015
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
