@@ -10,6 +10,7 @@ const enrichResource = async (resource) => {
     let res = JSON.parse(JSON.stringify(resource));
     if (!res.meta) res.meta = {};
     if (!res.meta.tag) res.meta.tag = [];
+    const hasOmopTag = () => res.meta.tag.some(t => t.system === "http://ohdsi.org/concept_id");
 
     try {
         // HELPER: Reuse this for both Observations and Imaging
@@ -42,20 +43,44 @@ const enrichResource = async (resource) => {
         // --- A. OBSERVATIONS (Vitals & SDOH) ---
         if (res.resourceType === 'Observation' && res.code?.coding) {
             await lookupLoinc(res.code.coding);
+            
+            // 🛡️ FAILOVER: If Service Failed, check Local Cache for Heart Rate (8867-4)
+            if (!hasOmopTag() && res.code.coding.some(c => c.code === '8867-4')) {
+                console.log("[Aligner] Using Failover Cache for Heart Rate");
+                res.meta.tag.push({ system: "http://ohdsi.org/concept_id", code: "3027018", display: "Heart rate" });
+            }
         }
 
         // --- B. IMAGING & PATHOLOGY (The "New" Logic) ---
         if (res.resourceType === 'ImagingStudy') {
-            // 1. Pathology: Check Series Modality for LOINC codes (e.g., 60568-3)
-            if (res.series?.[0]?.modality?.coding) {
-                await lookupLoinc(res.series[0].modality.coding);
+            // 1. Try Dynamic Lookup (if adapter sends real LOINC codes)
+            if (res.series?.[0]?.modality?.coding) await lookupLoinc(res.series[0].modality.coding);
+            if (res.modality?.[0]?.coding) await lookupLoinc(res.modality[0].coding);
+
+            // 2. MANUAL FALLBACK: Handle DICOM Codes (SM, MR)
+            // Because 'SM' is not in LOINC, we must map it manually.
+            const topModality = res.modality?.[0]?.code;
+            const seriesModality = res.series?.[0]?.modality?.code;
+            const modality = topModality || seriesModality;
+
+            // ✅ RESTORED: Pathology (SM)
+            if (modality === 'SM') {
+                res.description = "Whole Slide Imaging (Standardized)";
+                res.meta.tag.push({ 
+                    system: "http://ohdsi.org/concept_id", 
+                    code: "4052536", // OMOP for Pathology
+                    display: "Pathology" 
+                });
             }
             
-            // 2. Radiology: Handle DICOM codes (e.g., 'MR') manually
-            const modalityCode = res.modality?.[0]?.code;
-            if (modalityCode === 'MR' || modalityCode === 'MRI') {
+            // ✅ RESTORED: Radiology (MR)
+            if (modality === 'MR' || modality === 'MRI') {
                 res.description = "Magnetic Resonance Imaging (Standardized)";
-                res.meta.tag.push({ system: "http://ohdsi.org/concept_id", code: "4013636", display: "MRI Brain" });
+                res.meta.tag.push({ 
+                    system: "http://ohdsi.org/concept_id", 
+                    code: "4013636", // OMOP for MRI
+                    display: "MRI Brain" 
+                });
             }
         }
 
