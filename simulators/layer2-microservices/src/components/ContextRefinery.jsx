@@ -302,29 +302,26 @@ const ContextRefinery = () => {
         
         {/* ================= ZONE A: INGESTION ================= */}
         <div className="col-span-3 bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col shadow-lg">
-          <div className="flex items-center gap-2 mb-4 text-teal-400">
+          <div className="flex items-center gap-2 mb-3 text-teal-400">
             <Server size={18} />
             <h2 className="font-bold uppercase tracking-wider text-xs">Zone A: Ingestion</h2>
           </div>
           
-          <div className="space-y-3 flex-1 overflow-y-auto pr-1">
-            <Blade label="HL7 Feed" desc="Vitals / Labs" active={switches.source_hl7} onClick={() => toggle('source_hl7')} />
-            <Blade label="Genomics" desc="VCF Sequencing" active={switches.source_genomics} onClick={() => toggle('source_genomics')} />
-            <Blade label="Pathology" desc="WSI Slide Scanner" active={switches.source_pathology} onClick={() => toggle('source_pathology')} />
-            <Blade label="Radiology (DICOM)" desc="MRI / CT PACS" active={switches.source_dicom} onClick={() => toggle('source_dicom')} />
-            <Blade label="SDOH App" desc="Social Determinants" active={switches.source_sdoh} onClick={() => toggle('source_sdoh')} />
-            <Blade label="Research Data" desc="External Cohorts" active={switches.source_research} onClick={() => toggle('source_research')} />
+          {/* 1. ADAPTER SWITCHES (Takes remaining height) */}
+          <div className="space-y-2 flex-1 overflow-y-auto pr-1 min-h-[100px]">
+            {['HL7','GENOMICS','PATHOLOGY','DICOM','SDOH','RESEARCH'].map(type => (
+                 <Blade key={type} label={type} active={switches[`source_${type.toLowerCase()}`]} onClick={() => toggle(`source_${type.toLowerCase()}`)} />
+            ))}
           </div>
 
-          {/* NEW: RAW PAYLOAD VISUALIZER */}
-          <div className="mt-4 pt-4 border-t border-slate-700 flex flex-col h-40">
-            <div className="flex justify-between items-center mb-2">
+          {/* 2. RAW PAYLOAD INSPECTOR (Fixed Height) */}
+          <div className="mt-3 pt-2 border-t border-slate-700 flex flex-col h-36">
+             <div className="flex justify-between items-center mb-1">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">
-                    {selectedSource ? `Raw Payload: ${selectedSource}` : 'System Logs'}
+                    {selectedSource ? `Payload: ${selectedSource}` : 'Payload Inspector'}
                 </span>
-            </div>
-            
-            <div className="flex-1 bg-black/40 rounded p-3 overflow-auto font-mono text-[9px] border border-slate-700/50">
+             </div>
+             <div className="flex-1 bg-black/40 rounded p-2 overflow-auto font-mono text-[9px] border border-slate-700/50">
                 {selectedSource ? (
                     <div className="text-orange-300 whitespace-pre-wrap break-all">
                         {typeof RAW_SOURCES[selectedSource] === 'object' 
@@ -332,10 +329,20 @@ const ContextRefinery = () => {
                             : RAW_SOURCES[selectedSource]}
                     </div>
                 ) : (
-                    <div className="text-slate-500 space-y-1">
-                        {logs.map((l, i) => <div key={i}>{l}</div>)}
-                    </div>
+                    <div className="text-slate-600 italic mt-1">Select a source to inspect data structure...</div>
                 )}
+             </div>
+          </div>
+
+          {/* 3. SYSTEM LOGS (Fixed Height) */}
+          <div className="mt-3 pt-2 border-t border-slate-700 flex flex-col h-32">
+            <div className="mb-1 flex items-center gap-2">
+                <Activity size={10} className="text-slate-500"/>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Live Logs</span>
+            </div>
+            <div className="flex-1 bg-black/40 rounded p-2 overflow-auto font-mono text-[9px] border border-slate-700/50 text-slate-500 space-y-1">
+                {logs.length === 0 && <span className="opacity-30">System Ready...</span>}
+                {logs.map((l, i) => <div key={i}>{l}</div>)}
             </div>
           </div>
         </div>
