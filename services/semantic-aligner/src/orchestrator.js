@@ -105,6 +105,15 @@ const enrichResource = async (resource) => {
                     display: "OMOP Concept ID"
                 });
             }
+            if (modality === 'MR') {
+                res.description = "Magnetic Resonance Imaging (Standardized)";
+                // OMOP Concept ID for MRI: 4013636
+                res.meta.tag.push({ system: "http://ohdsi.org/concept_id", code: "4013636", display: "OMOP Concept ID" });
+            }
+        }
+        if (res.resourceType === 'ResearchSubject') {
+            // Map "Research Subject" to OMOP Concept ID 44814722 (Patient enrolled in clinical trial)
+            res.meta.tag.push({ system: "http://ohdsi.org/concept_id", code: "44814722", display: "Clinical Trial Participant" });
         }
 
         res.meta.tag.push({ system: "http://openhealthos.org/status", code: "aligned" });
