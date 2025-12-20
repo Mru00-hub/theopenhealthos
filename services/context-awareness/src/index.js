@@ -64,9 +64,12 @@ app.post('/context/:patientId', async (req, res) => {
         // A. Patient Identity (HL7 Adapter)
         const patientRes = bundle.entry.find(e => e.resource.resourceType === 'Patient')?.resource;
         if (patientRes) {
-            context.patient.name = patientRes.name?.[0]?.given?.[0] + " " + patientRes.name?.[0]?.family;
-            context.patient.mrn = patientRes.identifier?.[0]?.value;
-            context.patient.dob = patientRes.birthDate;
+            const pRecord = context.patient;
+            
+            pRecord.name = patientRes.name?.[0]?.given?.[0] + " " + patientRes.name?.[0]?.family;
+            pRecord.mrn = patientRes.identifier?.[0]?.value;
+            pRecord.dob = patientRes.birthDate;
+            
             context.clinical_status.summary = `Patient is a ${patientRes.gender}. Data aggregation active.`;
         }
 
