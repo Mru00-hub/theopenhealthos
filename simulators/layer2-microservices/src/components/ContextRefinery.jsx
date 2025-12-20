@@ -6,11 +6,13 @@ import _ from 'lodash';
 // --- CONFIGURATION ---
 // These point to your running Docker containers (via localhost)
 const API = {
-  HL7_ADAPTER: 'http://localhost:3001/ingest',
-  GENOMICS_ADAPTER: 'http://localhost:3002/ingest',
-  ALIGNER: 'http://localhost:3015/align',
-  CANONICAL: 'http://localhost:3016/convert',
-  CONTEXT_ENGINE: 'http://localhost:4000/context'
+  HL7_ADAPTER:      `${BASE_URL}-3001.app.github.dev/ingest`,
+  GENOMICS_ADAPTER: `${BASE_URL}-3002.app.github.dev/ingest`,
+  ADAPTER_SDOH:  `${BASE_URL}-3004.app.github.dev/ingest`,
+  
+  ALIGNER:          `${BASE_URL}-3015.app.github.dev/align`,
+  CANONICAL:        `${BASE_URL}-3016.app.github.dev/convert`,
+  CONTEXT_ENGINE:   `${BASE_URL}-4000.app.github.dev/context`
 };
 
 // --- MOCK RAW DATA (To inject when Adapters are toggled) ---
