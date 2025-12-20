@@ -1,86 +1,116 @@
 const axios = require('axios');
 
-// MICROSERVICE URLS (Internal Docker Network)
-// We use the Docker Service names, not localhost/host.docker.internal
+// CONFIGURATION: Exact ports from your index.js files
 const SERVICES = {
-    LOINC: "http://terminology-loinc:3030/lookup",
-    SNOMED: "http://terminology-snomed:3031/lookup",
-    RXNORM: "http://terminology-rxnorm:3032/lookup" 
+    // Port 3011 (LOINC) - Validates codes
+    LOINC_VALIDATE: "http://terminology-loinc:3011/validate", 
+    
+    // Port 3012 (RxNorm) - Lookups drug names
+    RXNORM_LOOKUP: "http://terminology-rxnorm:3012/lookup", 
+    
+    // Port 3010 (SNOMED) - Gets rich concept details (including OMOP ID)
+    SNOMED_CONCEPT: "http://terminology-snomed:3010/concept" 
 };
 
 /**
  * ENRICH RESOURCE
- * 1. Calls Terminology Services to normalize names.
- * 2. Injects OMOP Concept IDs into 'meta.tag' for the Canonical Mapper.
+ * Dynamically calls Terminology Services (Layer 3) to get OMOP IDs.
  */
 const enrichResource = async (resource) => {
-    // 1. Clone to avoid mutation side-effects
     let res = JSON.parse(JSON.stringify(resource));
-    
-    // 2. Ensure meta.tag exists (The Integration Layer)
     if (!res.meta) res.meta = {};
     if (!res.meta.tag) res.meta.tag = [];
 
     try {
-        // --- STRATEGY A: OBSERVATIONS (LOINC) ---
+        // --- A. OBSERVATIONS (LOINC) ---
         if (res.resourceType === 'Observation' && res.code?.coding) {
-            const loincCode = res.code.coding.find(c => c.system.includes('loinc') || c.system.includes('legacy'));
+            const loincCode = res.code.coding.find(c => c.system.includes('loinc'));
             
             if (loincCode) {
-                // Call Layer 3 Service
-                // We use a short timeout so we don't block the pipeline if terminology is slow
-                const lookup = await axios.get(`${SERVICES.LOINC}?code=${loincCode.code}`, { timeout: 2000 });
+                // Call LOINC Service: POST /validate
+                const lookup = await axios.post(SERVICES.LOINC_VALIDATE, { code: loincCode.code });
                 
-                if (lookup.data) {
-                    // A. Normalize Display Name (e.g. "Heart Rate" -> "Heart rate")
-                    if (lookup.data.display) res.code.text = lookup.data.display;
+                if (lookup.data && lookup.data.valid && lookup.data.concept) {
+                    const c = lookup.data.concept;
+                    if (c.display) res.code.text = c.display; // Standardize Name
+                    
+                    // Inject OMOP ID
+                    if (c.omop_id) {
+                        res.meta.tag.push({
+                            system: "http://ohdsi.org/concept_id",
+                            code: c.omop_id,
+                            display: "OMOP Concept ID"
+                        });
+                    }
+                }
+            }
+        }
 
-                    // B. Inject OMOP Tag (The Critical Architecture Handshake)
-                    // The Canonical Mapper reads THIS tag, not the raw LOINC code.
+        // --- B. MEDICATIONS (RxNorm) ---
+        if (res.resourceType === 'MedicationRequest' && res.medicationCodeableConcept?.text) {
+            const drugName = res.medicationCodeableConcept.text;
+            
+            // Call RxNorm Service: GET /lookup?drug=...
+            const lookup = await axios.get(`${SERVICES.RXNORM_LOOKUP}?drug=${encodeURIComponent(drugName)}`);
+            
+            if (lookup.data.found && lookup.data.concept) {
+                const c = lookup.data.concept;
+                res.medicationCodeableConcept.text = c.display; // Standardize Name
+                
+                // Inject OMOP ID
+                if (c.omop_id) {
                     res.meta.tag.push({
                         system: "http://ohdsi.org/concept_id",
-                        code: "3027018", // Demo: Hardcoded OMOP ID for Heart Rate
+                        code: c.omop_id,
                         display: "OMOP Concept ID"
                     });
                 }
             }
         }
 
-        // --- STRATEGY B: IMAGING & PATHOLOGY (Specialty Mapping) ---
+        // --- C. CONDITIONS (SNOMED) ---
+        // Your SNOMED service has a specific '/concept/:code' endpoint for rich data
+        if (res.resourceType === 'Condition' && res.code?.coding) {
+            const snomedCode = res.code.coding.find(c => c.system.includes('snomed'));
+            
+            if (snomedCode) {
+                // Call SNOMED Service: GET /concept/:code
+                // Note: We use the base URL defined above + the code
+                const lookup = await axios.get(`${SERVICES.SNOMED_CONCEPT}/${snomedCode.code}`);
+                
+                if (lookup.data) {
+                    const c = lookup.data;
+                    if (c.display) res.code.text = c.display;
+                    
+                    // Inject OMOP ID
+                    if (c.omop_id) {
+                        res.meta.tag.push({
+                            system: "http://ohdsi.org/concept_id",
+                            code: c.omop_id,
+                            display: "OMOP Concept ID"
+                        });
+                    }
+                }
+            }
+        }
+
+        // --- D. IMAGING (Local Logic) ---
         if (res.resourceType === 'ImagingStudy') {
             const modality = res.modality?.[0]?.code;
-            
-            if (modality === 'SM') { // Slide Microscopy
-                // Standardize Description
+            if (modality === 'SM') {
                 res.description = "Whole Slide Imaging (Standardized)";
-                
-                // Inject OMOP Tag
                 res.meta.tag.push({
                     system: "http://ohdsi.org/concept_id",
-                    code: "4052536", // OMOP ID for 'Microscopy'
+                    code: "4052536", 
                     display: "OMOP Concept ID"
                 });
             }
         }
 
-        // --- STRATEGY C: CONDITIONS (SNOMED) ---
-        // Keeps your old logic but updates it to use the correct OMOP handshake
-        if (res.resourceType === 'Condition' && res.code?.coding) {
-             // For demo simplicity, we just tag it as aligned if it has a code
-             res.meta.tag.push({
-                system: "http://ohdsi.org/concept_id",
-                code: "439777", // Demo: OMOP ID for Anemia/Generic Condition
-                display: "OMOP Concept ID"
-            });
-        }
-
-        // Mark as Processed by Aligner
         res.meta.tag.push({ system: "http://openhealthos.org/status", code: "aligned" });
 
     } catch (error) {
-        // Graceful Degradation: If Terminology Service is down, 
-        // we log it but return the original resource so the pipeline doesn't crash.
-        console.log(`[Aligner] ⚠️ Enrichment Warning for ${res.resourceType}: ${error.message}`);
+        console.log(`[Aligner] ⚠️ Enrichment Warning: ${error.message}`);
     }
 
     return res;
