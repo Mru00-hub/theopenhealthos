@@ -110,7 +110,7 @@ const transform = (rawMessage) => {
                 code: {
                     text: obx[3].split('^')[1] || obx[3], // "Heart Rate" or "Glu"
                     coding: [{
-                        system: "urn:legacy-local-codes",
+                        system: "http://loinc.org", 
                         code: obx[3].split('^')[0], // Local Code
                         display: obx[3].split('^')[1]
                     }]
