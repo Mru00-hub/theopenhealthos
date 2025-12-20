@@ -17,6 +17,7 @@ app.get('/health', (req, res) => res.json({ status: 'online' }));
 app.get('/context/:patientId', (req, res) => {
     const role = req.headers['x-user-role'] || 'CLINICIAN';
     console.log(`[CCA] Generating Context for Patient ${req.params.patientId} (Role: ${role})`);
+    const policyActive = req.headers['x-policy-active'] === 'true';
 
     // --- 1. AGGREGATE & SYNTHESIZE (Simulated) ---
     // Uses Environment Variables now to prevent CI/CD PHI Failures
@@ -44,14 +45,42 @@ app.get('/context/:patientId', (req, res) => {
 
     // --- 2. APPLY GOVERNANCE (Real Logic) ---
     if (role === 'RESEARCHER') {
-        console.log("   🛡️ [Governance] Redacting PII and Sensitive Data for Researcher");
-        const pt = context.patient;
-        pt.name = REDACTED_LABEL;
-        pt.mrn = REDACTED_LABEL;
-        context.genomics = { status: "RESTRICTED", risk_markers: [REDACTED_LABEL] };
-        context.sdoh = { status: "RESTRICTED", factors: [REDACTED_LABEL] };
-    }
+        if (policyActive) {
+            console.log("   🛡️ PCRM Active: Redacting PII (Role: Researcher)");
+            
+            // 1. Redact Direct Identifiers
+            context.patient.name = "[REDACTED BY PCRM]";
+            context.patient.mrn = "[REDACTED]";
+            context.patient.dob = "19XX-XX-XX"; // De-identify Date of Birth
 
+            // 2. Restrict Sensitive Clinical Data (Genomics)
+            context.genomics = { 
+                status: "RESTRICTED", 
+                risk_markers: ["[REDACTED - ACCESS DENIED]"] 
+            };
+
+            // 3. Restrict Social Data (SDOH)
+            context.sdoh = { 
+                status: "RESTRICTED", 
+                factors: ["[REDACTED - ACCESS DENIED]"] 
+            };
+
+            // 4. Filter Care Gaps to only aggregate level (remove specific messages)
+            if (context.care_gaps) {
+                context.care_gaps = context.care_gaps.map(g => ({
+                    type: g.type,
+                    message: "[REDACTED CLINICAL ACTION]"
+                }));
+            }
+
+        } else {
+            console.log("   ⚠️ PCRM Inactive: DATA LEAK WARNING - PII Exposed to Researcher");
+            // Do NOT redact. 
+            // This allows the Frontend 'Context View' to show full names when the switch is OFF,
+            // visually proving the danger of turning off governance.
+        }
+    }
+    
     res.json(context);
 });
 
