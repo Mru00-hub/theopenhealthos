@@ -16,7 +16,8 @@ const toOMOP = (bundle) => {
         DRUG_EXPOSURE: [],
         MEASUREMENT: [],   // Vitals, Labs
         OBSERVATION: [],   // Surveys, Social History
-        NOTE: []           // Unstructured text (Genomics)
+        NOTE: [],           // Unstructured text (Genomics)
+        PROCEDURE_OCCURRENCE: []
     };
 
     if (!bundle || !bundle.entry) return cdm;
@@ -98,6 +99,19 @@ const toOMOP = (bundle) => {
                 note_type_concept_id: 44814645, // "Note"
                 note_title: title,
                 note_text: `Variant: ${variant} | Status: ${snomedTag ? 'Pathogenic' : 'Unknown'}`
+            });
+        }
+        else if (r.resourceType === 'ImagingStudy') {
+            const modality = r.modality?.[0]?.code || "UNK";
+            const desc = r.description || "Imaging";
+            
+            cdm.PROCEDURE_OCCURRENCE.push({
+                procedure_occurrence_id: index + 500,
+                person_id: 1001,
+                procedure_concept_id: 0, // In real OMOP, we'd map CPT/LOINC here
+                procedure_date: new Date().toISOString().split('T')[0],
+                procedure_source_value: `${modality}: ${desc}`,
+                modifier_source_value: `${r.numberOfInstances} Instances`
             });
         }
     });
