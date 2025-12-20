@@ -5,30 +5,21 @@ const { deduplicate } = require('./merger');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const PORT = process.env.PORT || 3015;
+// Hardcode port to match Dockerfile
+const PORT = 3015;
 
-app.use(cors({
-    origin: true, // Allow any origin (including your Codespace URL)
-    credentials: true
-}));
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 
-// Health Check
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'online', 
         service: 'semantic-aligner', 
-        role: 'orchestrator',
-        connected_experts: ['SNOMED', 'LOINC', 'RxNorm'] 
+        mode: 'REAL_ORCHESTRATION',
+        connected_experts: ['SNOMED', 'LOINC'] 
     });
 });
 
-/**
- * POST /align
- * The Main Pipeline Endpoint.
- * Input: A raw FHIR Bundle (possibly containing duplicates and messy text).
- * Output: A pristine, normalized, de-duplicated Bundle.
- */
 app.post('/align', async (req, res) => {
     const rawBundle = req.body;
     
@@ -43,21 +34,21 @@ app.post('/align', async (req, res) => {
         // STEP 1: EXTRACT RESOURCES
         let resources = rawBundle.entry.map(e => e.resource);
 
-        // STEP 2: ENRICHMENT (Parallel Processing)
-        // We ask all experts at once to speed up
+        // STEP 2: ENRICHMENT (Real Network Calls)
+        // We map every resource to an async enrichment task
         const enrichedResources = await Promise.all(
             resources.map(r => enrichResource(r))
         );
 
         // STEP 3: DEDUPLICATION
-        // Now that codes are normalized (e.g., both are LOINC 8867-4), we can merge
+        // Merge "Pulse" (now LOINC 8867-4) and "Heart Rate" (LOINC 8867-4)
         const finalResources = deduplicate(enrichedResources);
 
         // STEP 4: REBUNDLE
         const outputBundle = {
             resourceType: "Bundle",
             id: uuidv4(),
-            type: "collection", // Processed collection
+            type: "collection",
             timestamp: new Date().toISOString(),
             meta: {
                 tag: [{ system: "http://openhealthos.org/status", code: "aligned", display: "Semantically Aligned" }]
@@ -76,7 +67,7 @@ app.post('/align', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`🧠 Semantic Aligner listening on port ${PORT}`);
-    console.log(`   - Orchestrating Context Refinery Pipeline`);
 });
+
