@@ -4,6 +4,7 @@ import { Activity, Database, GitMerge, Shield, FileText, Server, ArrowRight } fr
 import _ from 'lodash';
 
 // --- CONFIGURATION ---
+const BASE_URL = "https://didactic-broccoli-wrx56qq7467jc579j";
 // These point to your running Docker containers (via localhost)
 const API = {
   HL7_ADAPTER:      `${BASE_URL}-3001.app.github.dev/ingest`,
