@@ -97,6 +97,7 @@ const ContextRefinery = () => {
   const [displayData, setDisplayData] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [selectedSource, setSelectedSource] = useState(null); 
 
   const addLog = (msg) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 5));
 
@@ -269,7 +270,14 @@ const ContextRefinery = () => {
     }
   };
 
-  const toggle = (key) => setSwitches(prev => ({ ...prev, [key]: !prev[key] }));
+  const toggle = (key) => {
+    setSwitches(prev => ({ ...prev, [key]: !prev[key] }));
+    // If turning ON a source, select it for viewing
+    if (key.startsWith('source_')) {
+        const sourceName = key.replace('source_', '').toUpperCase();
+        setSelectedSource(sourceName);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-6 font-sans">
@@ -292,12 +300,13 @@ const ContextRefinery = () => {
 
       <div className="grid grid-cols-12 gap-6 h-[85vh]">
         
-        {/* ================= ZONE A ================= */}
+        {/* ================= ZONE A: INGESTION ================= */}
         <div className="col-span-3 bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col shadow-lg">
           <div className="flex items-center gap-2 mb-4 text-teal-400">
             <Server size={18} />
             <h2 className="font-bold uppercase tracking-wider text-xs">Zone A: Ingestion</h2>
           </div>
+          
           <div className="space-y-3 flex-1 overflow-y-auto pr-1">
             <Blade label="HL7 Feed" desc="Vitals / Labs" active={switches.source_hl7} onClick={() => toggle('source_hl7')} />
             <Blade label="Genomics" desc="VCF Sequencing" active={switches.source_genomics} onClick={() => toggle('source_genomics')} />
@@ -306,8 +315,28 @@ const ContextRefinery = () => {
             <Blade label="SDOH App" desc="Social Determinants" active={switches.source_sdoh} onClick={() => toggle('source_sdoh')} />
             <Blade label="Research Data" desc="External Cohorts" active={switches.source_research} onClick={() => toggle('source_research')} />
           </div>
-          <div className="mt-4 p-2 bg-slate-900 rounded text-[10px] text-slate-500 font-mono h-24 overflow-y-auto">
-            {logs.map((l, i) => <div key={i} className="mb-1">{l}</div>)}
+
+          {/* NEW: RAW PAYLOAD VISUALIZER */}
+          <div className="mt-4 pt-4 border-t border-slate-700 flex flex-col h-40">
+            <div className="flex justify-between items-center mb-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">
+                    {selectedSource ? `Raw Payload: ${selectedSource}` : 'System Logs'}
+                </span>
+            </div>
+            
+            <div className="flex-1 bg-black/40 rounded p-3 overflow-auto font-mono text-[9px] border border-slate-700/50">
+                {selectedSource ? (
+                    <div className="text-orange-300 whitespace-pre-wrap break-all">
+                        {typeof RAW_SOURCES[selectedSource] === 'object' 
+                            ? JSON.stringify(RAW_SOURCES[selectedSource], null, 2) 
+                            : RAW_SOURCES[selectedSource]}
+                    </div>
+                ) : (
+                    <div className="text-slate-500 space-y-1">
+                        {logs.map((l, i) => <div key={i}>{l}</div>)}
+                    </div>
+                )}
+            </div>
           </div>
         </div>
 
@@ -464,7 +493,7 @@ const ResearchTable = ({ data }) => (
   );
 
 // ✅ UPDATED CONTEXT VIEW (Visualizes Redaction)
-const ContextView = ({ profile, liveData }) => (
+const ContextView = ({ profile }) => (
     <div className="space-y-4">
         <div className="grid grid-cols-3 gap-3">
             <StatBox label="Acuity" value={`${profile.clinical_status?.acuity_score || 0}/10`} color="emerald" />
@@ -478,14 +507,12 @@ const ContextView = ({ profile, liveData }) => (
             </h3>
             
             <div className="grid grid-cols-2 gap-6 text-sm">
-                {/* Left Column: Clinical */}
                 <div className="space-y-3">
                     <div>
                         <span className="text-slate-500 text-xs uppercase font-bold">Patient Identity</span>
                         <div className="text-white font-bold text-lg">{profile.patient?.name}</div>
                         <div className="text-slate-400 text-xs">MRN: {profile.patient?.mrn}</div>
                     </div>
-                    
                     <div>
                         <span className="text-slate-500 text-xs uppercase font-bold">Active Problems</span>
                         <ul className="mt-1 space-y-1">
@@ -494,7 +521,6 @@ const ContextView = ({ profile, liveData }) => (
                             ))}
                         </ul>
                     </div>
-
                     <div>
                         <span className="text-slate-500 text-xs uppercase font-bold">Medications</span>
                         <ul className="mt-1 space-y-1">
@@ -505,31 +531,23 @@ const ContextView = ({ profile, liveData }) => (
                     </div>
                 </div>
 
-                {/* Right Column: Risks & Gaps */}
                 <div className="space-y-3">
                     <div>
                         <span className="text-slate-500 text-xs uppercase font-bold">Genomics & Risk</span>
                         {profile.genomics?.status === 'RESTRICTED' ? (
-                            <div className="text-red-400 bg-red-900/20 px-2 py-1 rounded text-xs border border-red-500/30 font-mono">
-                                [REDACTED BY GOVERNANCE]
-                            </div>
+                            <div className="text-red-400 bg-red-900/20 px-2 py-1 rounded text-xs border border-red-500/30 font-mono">[REDACTED BY GOVERNANCE]</div>
                         ) : (
                             <ul className="mt-1 space-y-1">
                                 {profile.genomics?.risk_markers?.map((r, i) => (
-                                    <li key={i} className="text-pink-300 bg-pink-900/20 px-2 py-1 rounded text-xs border border-pink-500/30 flex items-center gap-2">
-                                        <Activity size={10} /> {r}
-                                    </li>
+                                    <li key={i} className="text-pink-300 bg-pink-900/20 px-2 py-1 rounded text-xs border border-pink-500/30 flex items-center gap-2"><Activity size={10} /> {r}</li>
                                 ))}
                             </ul>
                         )}
                     </div>
-
                     <div>
                         <span className="text-slate-500 text-xs uppercase font-bold">SDOH Factors</span>
                         {profile.sdoh?.status === 'RESTRICTED' ? (
-                             <div className="text-red-400 bg-red-900/20 px-2 py-1 rounded text-xs border border-red-500/30 font-mono">
-                                [REDACTED]
-                            </div>
+                             <div className="text-red-400 bg-red-900/20 px-2 py-1 rounded text-xs border border-red-500/30 font-mono">[REDACTED]</div>
                         ) : (
                             <div className="flex flex-wrap gap-1 mt-1">
                                 {profile.sdoh?.factors?.map((f, i) => (
@@ -538,7 +556,6 @@ const ContextView = ({ profile, liveData }) => (
                             </div>
                         )}
                     </div>
-
                     {profile.care_gaps?.length > 0 && (
                         <div>
                              <span className="text-slate-500 text-xs uppercase font-bold">Care Gaps</span>
