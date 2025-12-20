@@ -261,7 +261,10 @@ const ContextRefinery = () => {
         try {
           // ✅ UPDATED: Pass Headers for Role-Based Redaction
           const res = await axios.get(`${API.CONTEXT_ENGINE}/1001`, {
-             headers: { 'X-User-Role': role }
+             headers: { 
+                 'X-User-Role': role,
+                 'X-Policy-Active': switches.layer_pcrm.toString() // 'true' or 'false'
+             }
           });
           
           setDisplayData({ type: 'CONTEXT', content: res.data, liveData: bundle });
