@@ -91,6 +91,17 @@ app.post('/verify', (req, res) => {
     }
 });
 
+/**
+ * POST /audit
+ * Logs immutable access events from the dashboard.
+ */
+app.post('/audit', (req, res) => {
+    const log = req.body;
+    // In production, this writes to a WORM (Write Once Read Many) storage
+    console.log(`[SAS AUDIT] ${new Date().toISOString()} | User: ${log.user} | Action: ${log.action} | Scope: ${log.records} records`);
+    res.json({ status: "logged", id: Date.now() });
+});
+
 app.listen(PORT, () => {
     console.log(`🔐 SAS Identity Service listening on port ${PORT}`);
     console.log(`   - IAM Ready (Roles: Practitioner, Nurse, Researcher, Admin)`);
