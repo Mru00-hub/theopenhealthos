@@ -1,55 +1,24 @@
 [
   {
-    "code": "22298006",
-    "display": "Myocardial infarction",
-    "synonyms": ["Heart attack", "MI", "Cardiac infarction"],
-    "parent": "128599005",
-    "category": "disorder"
+    "code": "73211009",
+    "display": "Diabetes mellitus",
+    "synonyms": ["Diabetes", "DM"],
+    "category": "disorder",
+    "omop_id": "201820"
   },
   {
     "code": "38341003",
     "display": "Hypertensive disorder",
     "synonyms": ["High blood pressure", "HTN"],
-    "parent": "128599005",
-    "category": "disorder"
-  },
-  {
-    "code": "73211009",
-    "display": "Diabetes mellitus",
-    "synonyms": ["Diabetes", "DM"],
-    "parent": "128599005",
-    "category": "disorder"
-  },
-  {
-    "code": "416575003",
-    "display": "Hereditary breast cancer susceptibility",
-    "synonyms": ["BRCA1 variant positive", "Genetic risk of breast cancer"],
-    "parent": "106221001",
-    "category": "finding"
-  },
-  {
-    "code": "254837009",
-    "display": "Malignant tumor of breast",
-    "synonyms": ["Breast cancer", "Ca breast"],
-    "parent": "363346000",
-    "category": "disorder"
-  },
-  {
-    "code": "425068000",
-    "display": "Homelessness (finding)",
-    "synonyms": ["Homeless", "No fixed abode"],
-    "parent": "105729006",
-    "category": "social"
+    "category": "disorder",
+    "omop_id": "316866"
   },
   {
     "code": "122555007",
     "display": "Venous blood specimen",
     "synonyms": ["Blood sample"],
-    "category": "specimen"
-  },
-  {
-    "code": "128599005",
-    "display": "Structural disorder of heart",
-    "category": "grouping"
+    "category": "specimen",
+    "omop_id": "4045667"
   }
 ]
+
