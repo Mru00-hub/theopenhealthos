@@ -271,14 +271,14 @@ const ContextRefinery = () => {
       } else if (switches.layer_context) {
         try {
           // ✅ UPDATED: Pass Headers for Role-Based Redaction
-          const res = await axios.post(`${API.CONTEXT_ENGINE}/context/1001`, { bundle }, { 
+          const res = await axios.post(`${API.CONTEXT_ENGINE}/1001`, { bundle }, { 
             headers: { 'X-User-Role': role, 'X-Policy-Active': switches.layer_pcrm.toString() }
           });
           
           setDisplayData({ type: 'CONTEXT', content: res.data, liveData: bundle, governance: govMeta });
           addLog("👑 Context Engine: Golden Record Built.");
         } catch (e) {
-           addLog("❌ Context Engine Offline (Port 4000).");
+          addLog("❌ Context Engine Offline (Port 4000).");
         }
       } else {
         setDisplayData({ type: 'FHIR', content: bundle });
