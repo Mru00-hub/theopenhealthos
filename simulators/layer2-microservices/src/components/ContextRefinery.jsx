@@ -8,13 +8,12 @@ const BASE_URL = "https://didactic-broccoli-wrx56qq7467jc579j"; // Replace if yo
 
 const API = {
   // === LAYER 4a: INGESTION ADAPTERS ===
-  // Note: In this React sim, we mock the 'Push' (Input), but we point to these for reference.
   ADAPTER_HL7:       `${BASE_URL}-3001.app.github.dev/ingest`,
   ADAPTER_GENOMICS:  `${BASE_URL}-3002.app.github.dev/ingest`,
   ADAPTER_PATHOLOGY: `${BASE_URL}-3003.app.github.dev/ingest`,
   ADAPTER_SDOH:      `${BASE_URL}-3004.app.github.dev/ingest`,
-  ADAPTER_RESEARCH:  `${BASE_URL}-3005.app.github.dev/ingest`, // External Datasets
-  ADAPTER_DICOM:     `${BASE_URL}-3006.app.github.dev/ingest`, // Radiology PACS
+  ADAPTER_RESEARCH:  `${BASE_URL}-3005.app.github.dev/ingest`,
+  ADAPTER_DICOM:     `${BASE_URL}-3006.app.github.dev/ingest`,
 
   // === LAYER 4b: SEMANTIC FABRIC ===
   ALIGNER:           `${BASE_URL}-3015.app.github.dev/align`,
@@ -24,14 +23,14 @@ const API = {
   
   // === LAYER 5: GOVERNANCE ===
   PCRM:              `${BASE_URL}-3020.app.github.dev/check-access`,
-  RCF:  `${BASE_URL}-3021.app.github.dev/check-consent`, // Consent (Research)
-  SAS:  `${BASE_URL}-3022.app.github.dev/audit`,        // Security Audit
+  RCF:               `${BASE_URL}-3021.app.github.dev/check-consent`,
+  SAS:               `${BASE_URL}-3022.app.github.dev/audit`,
   
   // === LAYER 6: CONTEXT AWARENESS ===
   CONTEXT_ENGINE:    `${BASE_URL}-4000.app.github.dev/context`
 };
 
-// --- MOCK RAW DATA (The "Full Fleet") ---
+// --- MOCK RAW DATA ---
 const MOCK_DATA = {
   HL7: {
     resourceType: "Observation",
@@ -82,21 +81,19 @@ const MOCK_DATA = {
 };
 
 const ContextRefinery = () => {
-  // --- STATE ---
   const [switches, setSwitches] = useState({
-    // Zone A: The 6 Pillars
+    // Zone A
     source_hl7: false,
     source_genomics: false,
     source_pathology: false,
     source_sdoh: false,
-    source_research: false, // New
+    source_research: false,
     source_dicom: false,
-    
-    // Zone B: Pipeline
+    // Zone B
     layer_aligner: false,
-    layer_pcrm: false, // Renamed from 'layer_governance' for clarity
-    layer_rcf: false,  // NEW: Research Consent Framework
-    layer_sas: false,  // NEW: Security Audit Service
+    layer_pcrm: false,
+    layer_rcf: false,
+    layer_sas: false,
     layer_canonical: false,
     layer_context: false
   });
@@ -108,7 +105,6 @@ const ContextRefinery = () => {
 
   const addLog = (msg) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 5));
 
-  // --- THE PIPELINE ENGINE ---
   useEffect(() => {
     processPipeline();
   }, [switches, role]);
@@ -118,7 +114,7 @@ const ContextRefinery = () => {
     let bundle = { resourceType: "Bundle", entry: [] };
 
     try {
-      // 1. INGESTION (Zone A)
+      // 1. INGESTION
       if (switches.source_hl7) bundle.entry.push({ resource: MOCK_DATA.HL7 });
       if (switches.source_genomics) bundle.entry.push({ resource: MOCK_DATA.GENOMICS });
       if (switches.source_pathology) bundle.entry.push({ resource: MOCK_DATA.PATHOLOGY });
@@ -132,10 +128,9 @@ const ContextRefinery = () => {
         return;
       }
 
-      // 2. SEMANTIC ALIGNER (Layer 4b)
+      // 2. SEMANTIC ALIGNER
       if (switches.layer_aligner) {
         try {
-          // Use 'real' aligner if data present
           const res = await axios.post(API.ALIGNER, bundle);
           bundle = res.data;
           addLog("✅ Aligner: Standardized Codes (LOINC/SNOMED).");
@@ -145,13 +140,11 @@ const ContextRefinery = () => {
       }
 
       // 3. GOVERNANCE TRIAD (Layer 5)
-
-      // A. PCRM (Policy Check)
+      
+      // A. PCRM (Policy)
       if (switches.layer_pcrm) {
-        // Real Call: Check Role Policies
         try {
             await axios.post(API.PCRM, { role, resource: 'Bundle' });
-            
             if (role === 'RESEARCHER') {
                 addLog("🛡️ PCRM: Enforcing 'Least Privilege' (Redacting PII)...");
                 bundle.entry = bundle.entry.map(e => {
@@ -164,26 +157,23 @@ const ContextRefinery = () => {
         } catch(e) { addLog("⚠️ PCRM Service Unreachable"); }
       }
 
-      // B. RCF (Research Consent)
+      // B. RCF (Consent)
       if (switches.layer_rcf && role === 'RESEARCHER') {
         try {
-            // Real Call: Check Consent Status
             const consentRes = await axios.post(API.RCF, { patientId: '1001', studyId: 'RES-001' });
-            
             if (consentRes.data.consented === false) {
                 addLog("⛔ RCF: Patient OPTED OUT of Research. Blocking Data.");
                 setDisplayData({ type: 'BLOCKED', reason: "Consent Revoked (RCF)" });
                 setLoading(false);
-                return; // HARD STOP -> Data never reaches the Mapper
+                return;
             } else {
                 addLog("✅ RCF: Research Consent Verified.");
             }
         } catch(e) { addLog("⚠️ RCF Service Unreachable"); }
       }
 
-      // C. SAS (Security Audit)
+      // C. SAS (Audit)
       if (switches.layer_sas) {
-        // Fire-and-forget audit log (don't await strictly)
         axios.post(API.SAS, { 
             timestamp: new Date(), 
             user: role, 
@@ -203,7 +193,11 @@ const ContextRefinery = () => {
         }
       } else if (switches.layer_context) {
         try {
-          const res = await axios.get(`${API.CONTEXT_ENGINE}/1001`);
+          // ✅ UPDATED: Pass Headers for Role-Based Redaction
+          const res = await axios.get(`${API.CONTEXT_ENGINE}/1001`, {
+             headers: { 'X-User-Role': role }
+          });
+          
           setDisplayData({ type: 'CONTEXT', content: res.data, liveData: bundle });
           addLog("👑 Context Engine: Golden Record Built.");
         } catch (e) {
@@ -244,13 +238,12 @@ const ContextRefinery = () => {
 
       <div className="grid grid-cols-12 gap-6 h-[85vh]">
         
-        {/* ================= ZONE A: THE 6 PILLARS ================= */}
+        {/* ================= ZONE A ================= */}
         <div className="col-span-3 bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col shadow-lg">
           <div className="flex items-center gap-2 mb-4 text-teal-400">
             <Server size={18} />
             <h2 className="font-bold uppercase tracking-wider text-xs">Zone A: Ingestion</h2>
           </div>
-          
           <div className="space-y-3 flex-1 overflow-y-auto pr-1">
             <Blade label="HL7 Feed" desc="Vitals / Labs" active={switches.source_hl7} onClick={() => toggle('source_hl7')} />
             <Blade label="Genomics" desc="VCF Sequencing" active={switches.source_genomics} onClick={() => toggle('source_genomics')} />
@@ -259,41 +252,32 @@ const ContextRefinery = () => {
             <Blade label="SDOH App" desc="Social Determinants" active={switches.source_sdoh} onClick={() => toggle('source_sdoh')} />
             <Blade label="Research Data" desc="External Cohorts" active={switches.source_research} onClick={() => toggle('source_research')} />
           </div>
-
           <div className="mt-4 p-2 bg-slate-900 rounded text-[10px] text-slate-500 font-mono h-24 overflow-y-auto">
             {logs.map((l, i) => <div key={i} className="mb-1">{l}</div>)}
           </div>
         </div>
 
-        {/* ================= ZONE B: PROCESSING ================= */}
+        {/* ================= ZONE B ================= */}
         <div className="col-span-3 bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col shadow-lg">
           <div className="flex items-center gap-2 mb-4 text-indigo-400">
             <GitMerge size={18} />
             <h2 className="font-bold uppercase tracking-wider text-xs">Zone B: Pipeline</h2>
           </div>
-
           <div className="space-y-3">
             <PipelineStage label="Semantic Aligner" desc="Normalize (LOINC/SNOMED)" active={switches.layer_aligner} color="indigo" onClick={() => toggle('layer_aligner')} />
-            {/* Layer 5: Governance Triad */}
             <div className="space-y-1 my-3 pl-2 border-l-2 border-slate-700">
                 <p className="text-[10px] font-bold text-slate-500 uppercase">Layer 5: Governance</p>
-                
                 <PipelineStage label="PCRM (Policy)" desc="Role-Based Access" active={switches.layer_pcrm} color="red" icon={<Shield size={14} />} onClick={() => toggle('layer_pcrm')} />
-                
                 <PipelineStage label="RCF (Consent)" desc="Check Opt-In Status" active={switches.layer_rcf} color="orange" icon={<UserCheck size={14} />} onClick={() => toggle('layer_rcf')} />
-                
                 <PipelineStage label="SAS (Audit)" desc="Log Access Event" active={switches.layer_sas} color="blue" icon={<FileText size={14} />} onClick={() => toggle('layer_sas')} />
             </div>
-
-            
             <div className="my-2 border-t border-slate-700/50" />
-            
             <PipelineStage label="Canonical Mapper" desc="Output: OMOP CDM" active={switches.layer_canonical} color="purple" disabled={switches.layer_context} onClick={() => toggle('layer_canonical')} />
             <PipelineStage label="Context Engine" desc="Output: Golden Record" active={switches.layer_context} color="emerald" disabled={switches.layer_canonical} onClick={() => toggle('layer_context')} />
           </div>
         </div>
 
-        {/* ================= ZONE C: OUTPUT ================= */}
+        {/* ================= ZONE C ================= */}
         <div className="col-span-6 bg-slate-800 rounded-xl p-0 border border-slate-700 flex flex-col shadow-lg overflow-hidden">
           <div className="bg-slate-900 p-3 border-b border-slate-700 flex justify-between items-center">
             <div className="flex items-center gap-2 text-emerald-400">
@@ -302,7 +286,6 @@ const ContextRefinery = () => {
             </div>
             {displayData?.type && <span className="text-[10px] px-2 py-0.5 bg-blue-900 text-blue-300 rounded font-bold">{displayData.type} VIEW</span>}
           </div>
-
           <div className="flex-1 p-4 overflow-auto bg-slate-800/50">
             {!displayData ? (
               <div className="flex flex-col items-center justify-center h-full text-slate-600">
@@ -314,8 +297,15 @@ const ContextRefinery = () => {
                 {displayData.type === 'FHIR' && <FhirView bundle={displayData.content} />}
                 {displayData.type === 'OMOP' && <ResearchTable data={displayData.content} />}
                 {displayData.type === 'CONTEXT' && <ContextView profile={displayData.content} liveData={displayData.liveData} />}
+                {displayData.type === 'BLOCKED' && (
+                    <div className="flex flex-col items-center justify-center h-full text-red-500">
+                        <Shield size={48} className="mb-4" />
+                        <h3 className="font-bold">Access Denied</h3>
+                        <p className="text-sm">{displayData.reason}</p>
+                    </div>
+                )}
                 
-                {displayData.type !== 'OMOP' && (
+                {displayData.type !== 'OMOP' && displayData.type !== 'BLOCKED' && (
                     <div className="mt-6 pt-4 border-t border-slate-700">
                     <pre className="bg-black/30 p-3 rounded text-[10px] text-green-500/80 overflow-x-auto font-mono max-h-32">
                         {JSON.stringify(displayData.content, null, 2)}
@@ -326,7 +316,6 @@ const ContextRefinery = () => {
             )}
           </div>
         </div>
-
       </div>
     </div>
   );
@@ -345,7 +334,7 @@ const Blade = ({ label, desc, active, onClick }) => (
 );
 
 const PipelineStage = ({ label, desc, active, color, onClick, disabled, icon }) => {
-    const colors = { indigo: 'border-indigo-500 text-indigo-300 bg-indigo-900/10', purple: 'border-purple-500 text-purple-300 bg-purple-900/10', emerald: 'border-emerald-500 text-emerald-300 bg-emerald-900/10', red: 'border-red-500 text-red-300 bg-red-900/10' };
+    const colors = { indigo: 'border-indigo-500 text-indigo-300 bg-indigo-900/10', purple: 'border-purple-500 text-purple-300 bg-purple-900/10', emerald: 'border-emerald-500 text-emerald-300 bg-emerald-900/10', red: 'border-red-500 text-red-300 bg-red-900/10', orange: 'border-orange-500 text-orange-300 bg-orange-900/10', blue: 'border-blue-500 text-blue-300 bg-blue-900/10' };
     return (
         <div onClick={!disabled ? onClick : null} className={`p-3 rounded border cursor-pointer flex justify-between items-center transition-all ${disabled ? 'opacity-30' : active ? colors[color] : 'border-slate-700 text-slate-400 hover:border-slate-600'}`}>
             <div>
@@ -365,7 +354,7 @@ const FhirView = ({ bundle }) => (
 
 const ClinicalCard = ({ resource }) => {
   const isEnriched = resource.meta?.tag?.some(t => t.code === 'aligned');
-  const isRedacted = resource.variant?.[0]?.observedAllele === 'REDACTED' || resource.description === '[REDACTED STUDY]' || resource.actualArm === 'REDACTED';
+  const isRedacted = resource.variant?.[0]?.observedAllele === 'REDACTED_POLICY_101' || resource.description === '[REDACTED STUDY]' || resource.actualArm === 'REDACTED';
   const typeIcons = { Observation: Activity, MolecularSequence: Cpu, ImagingStudy: resource.modality?.[0]?.code === 'SM' ? Microscope : FileImage, ResearchSubject: FileText };
   const Icon = typeIcons[resource.resourceType] || Database;
 
@@ -380,16 +369,12 @@ const ClinicalCard = ({ resource }) => {
         {resource.code?.text || resource.description || resource.type || resource.study?.display || "Unknown"}
       </div>
       
-      {/* Vitals */}
       {resource.valueQuantity && <div className="text-lg font-bold text-white mt-1">{resource.valueQuantity.value} <span className="text-xs font-normal text-slate-400">{resource.valueQuantity.unit}</span></div>}
       
-      {/* Genomics */}
       {resource.variant && <div className="mt-2 text-[10px] font-mono text-red-300 bg-black/20 p-1 rounded">{resource.variant[0].observedAllele}</div>}
       
-      {/* Imaging Stats */}
       {resource.numberOfInstances && <div className="mt-2 text-[10px] text-slate-400 bg-slate-700/50 p-1 rounded inline-block">{resource.numberOfInstances} Instances ({resource.modality?.[0]?.code})</div>}
 
-      {/* Research Stats */}
       {resource.resourceType === 'ResearchSubject' && <div className="mt-2 text-[10px] text-purple-300 bg-purple-900/20 p-1 rounded inline-block">Arm: {resource.actualArm}</div>}
 
       {isEnriched && <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_5px_rgba(34,197,94,0.8)]" />}
@@ -412,6 +397,7 @@ const ResearchTable = ({ data }) => (
     </div>
   );
 
+// ✅ UPDATED CONTEXT VIEW (Visualizes Redaction)
 const ContextView = ({ profile, liveData }) => (
     <div className="space-y-4">
         <div className="grid grid-cols-3 gap-3">
@@ -419,12 +405,84 @@ const ContextView = ({ profile, liveData }) => (
             <StatBox label="Problems" value={profile.active_problems?.length || 0} color="blue" />
             <StatBox label="Care Gaps" value={profile.care_gaps?.length || 0} color="purple" />
         </div>
-        <div className="p-3 rounded border border-slate-700 bg-slate-800">
-            <h3 className="text-xs font-bold text-slate-400 mb-2 uppercase flex items-center gap-2"><UserCheck size={14} /> Golden Record</h3>
-            <div className="text-xs text-slate-300 space-y-1">
-                <p>Patient: <span className="text-white font-bold">{profile.patient?.name}</span></p>
-                <p>Summary: {profile.clinical_status?.summary}</p>
-                <p className="text-pink-300">Genomics: {profile.genomics?.status}</p>
+
+        <div className="p-4 rounded border border-slate-700 bg-slate-800 shadow-lg">
+            <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase flex items-center gap-2">
+                <UserCheck size={14} /> Golden Record (Layer 6)
+            </h3>
+            
+            <div className="grid grid-cols-2 gap-6 text-sm">
+                {/* Left Column: Clinical */}
+                <div className="space-y-3">
+                    <div>
+                        <span className="text-slate-500 text-xs uppercase font-bold">Patient Identity</span>
+                        <div className="text-white font-bold text-lg">{profile.patient?.name}</div>
+                        <div className="text-slate-400 text-xs">MRN: {profile.patient?.mrn}</div>
+                    </div>
+                    
+                    <div>
+                        <span className="text-slate-500 text-xs uppercase font-bold">Active Problems</span>
+                        <ul className="mt-1 space-y-1">
+                            {profile.active_problems?.map((p, i) => (
+                                <li key={i} className="text-blue-300 bg-blue-900/20 px-2 py-1 rounded text-xs border border-blue-500/30">{p}</li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    <div>
+                        <span className="text-slate-500 text-xs uppercase font-bold">Medications</span>
+                        <ul className="mt-1 space-y-1">
+                            {profile.current_meds?.map((m, i) => (
+                                <li key={i} className="text-slate-300 bg-slate-700/50 px-2 py-1 rounded text-xs border border-slate-600">{m}</li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+
+                {/* Right Column: Risks & Gaps */}
+                <div className="space-y-3">
+                    <div>
+                        <span className="text-slate-500 text-xs uppercase font-bold">Genomics & Risk</span>
+                        {profile.genomics?.status === 'RESTRICTED' ? (
+                            <div className="text-red-400 bg-red-900/20 px-2 py-1 rounded text-xs border border-red-500/30 font-mono">
+                                [REDACTED BY GOVERNANCE]
+                            </div>
+                        ) : (
+                            <ul className="mt-1 space-y-1">
+                                {profile.genomics?.risk_markers?.map((r, i) => (
+                                    <li key={i} className="text-pink-300 bg-pink-900/20 px-2 py-1 rounded text-xs border border-pink-500/30 flex items-center gap-2">
+                                        <Activity size={10} /> {r}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+
+                    <div>
+                        <span className="text-slate-500 text-xs uppercase font-bold">SDOH Factors</span>
+                        {profile.sdoh?.status === 'RESTRICTED' ? (
+                             <div className="text-red-400 bg-red-900/20 px-2 py-1 rounded text-xs border border-red-500/30 font-mono">
+                                [REDACTED]
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                                {profile.sdoh?.factors?.map((f, i) => (
+                                    <span key={i} className="text-emerald-300 bg-emerald-900/20 px-2 py-0.5 rounded text-[10px] border border-emerald-500/30">{f}</span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {profile.care_gaps?.length > 0 && (
+                        <div>
+                             <span className="text-slate-500 text-xs uppercase font-bold">Care Gaps</span>
+                             <div className="mt-1 p-2 bg-purple-900/20 border border-purple-500/40 rounded">
+                                <div className="text-purple-300 font-bold text-xs">CRITICAL ACTION</div>
+                                <div className="text-purple-200 text-xs mt-1">{profile.care_gaps[0].message}</div>
+                             </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     </div>
